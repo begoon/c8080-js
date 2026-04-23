@@ -5,8 +5,11 @@ import { Preprocessor } from "../src/frontend/preprocessor.ts";
 import { Lex } from "../src/frontend/lex.ts";
 import { Parser } from "../src/frontend/parser.ts";
 import { dumpProgram } from "../src/util/dump.ts";
-import { dirname, resolve as pathResolve } from "node:path";
-import { existsSync } from "node:fs";
+import { compileProgram } from "../src/codegen/i8080/compile.ts";
+import { wrapRks } from "../src/formats/rks.ts";
+import { dirname, resolve as pathResolve, basename } from "node:path";
+import { existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { $ } from "bun";
 
 function usage(): void {
   console.log(`Usage: c8080 [options] file1.c file2.c ...
@@ -55,11 +58,47 @@ async function main(): Promise<number> {
 
     if (opts.printTreeBeforeOpt) {
       console.log(dumpProgram(program));
-    } else {
-      console.error("c8080-js: parsing complete — codegen not yet implemented");
-      console.error(`  ${program.functions.length} functions, ${program.globals.length} globals`);
+      return 0;
+    }
+
+    const org = opts.outputFormat === "rks" ? 0 : 0x0100;
+    const { asm, warnings } = compileProgram(program, { org });
+    for (const w of warnings) console.error(`warning: ${w}`);
+
+    const firstSource = opts.sources[0]!;
+    const base = basename(firstSource).replace(/\.[^.]+$/, "");
+    const asmPath = opts.asmFile ?? `${base}.asm`;
+    const binPath = opts.binFile ?? `${base}.bin`;
+
+    writeFileSync(asmPath, asm);
+
+    // Assemble via asm8080.
+    const asmDir = dirname(pathResolve(asmPath));
+    const asmName = basename(asmPath);
+    const r = await $`bunx asm8080 ${asmName} -o ${asmDir}`.cwd(asmDir).nothrow().quiet();
+    if (r.exitCode !== 0) {
+      console.error(r.stderr.toString());
+      console.error(r.stdout.toString());
+      return r.exitCode;
+    }
+
+    // asm8080 writes <base>.bin next to the input.
+    const producedBin = pathResolve(asmDir, `${base}.bin`);
+    if (!existsSync(producedBin)) {
+      console.error(`asm8080 did not produce ${producedBin}`);
       return 1;
     }
+
+    if (opts.outputFormat === "rks") {
+      const raw = new Uint8Array(readFileSync(producedBin));
+      writeFileSync(binPath, wrapRks(raw));
+      if (pathResolve(binPath) !== producedBin) unlinkSync(producedBin);
+    } else if (pathResolve(binPath) !== producedBin) {
+      const raw = readFileSync(producedBin);
+      writeFileSync(binPath, raw);
+      unlinkSync(producedBin);
+    }
+    console.log("Done");
     return 0;
   } catch (e) {
     console.error((e as Error).message);
