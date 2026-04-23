@@ -73,7 +73,8 @@ iterative putint with local char[6], primes up to 30 trial-division,
 array of struct arr[i].x, RPN calculator "3 4 +"=7 etc.
 printf literal, printf %d (incl. 0, -42, INT16_MIN, INT16_MAX),
 printf mixed %s/%d/%c/%%, printf in a loop, printf unknown-spec passthrough,
-printf via char* format (not just literal), user printf overrides builtin.
+printf via char* format (not just literal), user printf overrides builtin,
+struct-by-value assign (local=local, global=local, s=*p; 9-byte struct).
 ```
 
 ### Known gaps
@@ -94,8 +95,9 @@ printf via char* format (not just literal), user printf overrides builtin.
   `asm { }` blocks. sjasmplus and asm8080 disagree on syntax (e.g.
   `label = value` vs `label: EQU value`), so those don't assemble. Pure
   C stdlib sources (`puts.c`, etc.) work fine.
-- **Struct value copy / pass-by-value** — assignment between struct
-  values not supported; pass by pointer.
+- **Struct pass-by-value / return-by-value** — neither argument passing
+  nor returning structs by value is supported; pass pointers. Plain
+  struct assignment `a = b` (incl. `g = local`, `s = *p`) does copy.
 
 ### Project layout
 

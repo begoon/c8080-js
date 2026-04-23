@@ -709,4 +709,37 @@ describe("codegen — end-to-end", () => {
     `);
     expect(r.output).toBe("n=7\n");
   });
+
+  test("struct assign: local = local copies all fields", () => {
+    expect(run(`
+      struct Point { int x; int y; };
+      int main(void) {
+        struct Point a;
+        struct Point b;
+        b.x = 10; b.y = 20;
+        a = b;
+        return a.x + a.y;
+      }
+    `)).toBe(30);
+  });
+
+  test("struct assign: covers mixed-size fields and globals", () => {
+    const r = runWithOutput(`
+      struct Big { int a; int b; int c; int d; char tag; };
+      struct Big g;
+      int main(void) {
+        struct Big local;
+        local.a = 1; local.b = 2; local.c = 3; local.d = 4; local.tag = 'Z';
+        g = local;
+        struct Big *p;
+        p = &g;
+        struct Big via;
+        via = *p;
+        putchar(via.tag);
+        return via.a + via.b + via.c + via.d;
+      }
+    `);
+    expect(r.output).toBe("Z");
+    expect(r.hl).toBe(10);
+  });
 });

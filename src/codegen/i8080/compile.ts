@@ -253,6 +253,12 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
       return;
     }
     case "assign": {
+      // Struct-by-value: copy all bytes from source lvalue to target lvalue.
+      const structSize = assignedStructSize(n.target, n.value);
+      if (structSize !== null) {
+        compileStructCopy(out, n.target, n.value, structSize, warnings);
+        return;
+      }
       if (n.target.kind === "var") {
         compileExpression(out, n.value, warnings);
         const addr = variableAddress(out, n.target.name, n.target.resolved);
@@ -599,8 +605,71 @@ function compileAddrOf(out: Emitter, n: CNode, warnings: string[]): void {
     compileExpression(out, n.arg, warnings); // the deref's arg already IS the address
     return;
   }
+  if (n.kind === "member") {
+    // Address of a struct member: object addr + field offset.
+    const field = resolveField(n);
+    if (field) {
+      if (n.arrow) compileExpression(out, n.object, warnings);
+      else compileAddrOf(out, n.object, warnings);
+      if (field.offset > 0) {
+        out.instruction("LXI", `D,${field.offset}`);
+        out.instruction("DAD", "D");
+      }
+      return;
+    }
+  }
   warnings.push(`cannot take address of ${n.kind}`);
   out.instruction("LXI", "H,0");
+}
+
+function staticStructType(n: CNode): Extract<CType, { kind: "struct" }> | null {
+  if (n.kind === "var" && n.resolved && n.resolved.type.kind === "struct") return n.resolved.type;
+  if (n.kind === "member") {
+    const parent = structTypeOf(n.object, n.arrow);
+    if (parent && parent.fields) {
+      const f = parent.fields.find((ff) => ff.name === n.field);
+      if (f && f.type.kind === "struct") return f.type;
+    }
+  }
+  if (n.kind === "unary" && n.op === "deref") {
+    // *p where p is pointer-to-struct.
+    if (n.arg.kind === "var" && n.arg.resolved) {
+      const t = n.arg.resolved.type;
+      if (t.kind === "pointer" && t.to.kind === "struct") return t.to;
+    }
+  }
+  return null;
+}
+
+function assignedStructSize(target: CNode, value: CNode): number | null {
+  const t = staticStructType(target);
+  const v = staticStructType(value);
+  if (!t || !v) return null;
+  if (t.size === 0) return null;
+  // Tolerate differently-named struct types with matching size (rare) — C
+  // disallows it but we don't track tag identity beyond size here.
+  return t.size;
+}
+
+function compileStructCopy(
+  out: Emitter, target: CNode, value: CNode, size: number, warnings: string[],
+): void {
+  // Compute src address → stash; compute dst address → XCHG; then byte-copy
+  // <size> bytes from (HL) to (DE). HL/DE both step forward, B is the counter.
+  compileAddrOf(out, value, warnings);
+  out.instruction("PUSH", "H");
+  compileAddrOf(out, target, warnings);
+  out.instruction("XCHG");          // DE = dst
+  out.instruction("POP", "H");      // HL = src
+  out.instruction("MVI", `B,${size}`);
+  const loop = out.freshLabel("scpy");
+  out.label(loop);
+  out.instruction("MOV", "A,M");
+  out.instruction("STAX", "D");
+  out.instruction("INX", "H");
+  out.instruction("INX", "D");
+  out.instruction("DCR", "B");
+  out.instruction("JNZ", loop);
 }
 
 function compileIncDec(out: Emitter, op: string, arg: CNode, warnings: string[]): void {

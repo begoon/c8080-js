@@ -16,7 +16,8 @@
       "Bash(bun bin/c8080.ts -Orks -DARCH_SPECIALIST -Ispec -ogame.rks game.c)",
       "Bash(bun -e ' *)",
       "Bash(bun *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

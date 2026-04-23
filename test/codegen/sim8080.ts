@@ -61,6 +61,10 @@ class Cpu {
       case 0x31: this.sp = this.fetchWord(); return true;
       case 0x3A: this.a = this.readByte(this.fetchWord()); return true;
       case 0x32: this.writeByte(this.fetchWord(), this.a); return true;
+      case 0x02: this.writeByte(this.bc(), this.a); return true; // STAX B
+      case 0x12: this.writeByte(this.de(), this.a); return true; // STAX D
+      case 0x0A: this.a = this.readByte(this.bc()); return true; // LDAX B
+      case 0x1A: this.a = this.readByte(this.de()); return true; // LDAX D
       case 0x2A: { const addr = this.fetchWord(); this.l = this.readByte(addr); this.h = this.readByte(addr + 1); return true; }
       case 0x22: { const addr = this.fetchWord(); this.writeByte(addr, this.l); this.writeByte(addr + 1, this.h); return true; }
       case 0x3E: this.a = this.fetch(); return true;
