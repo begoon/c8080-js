@@ -91,6 +91,46 @@ button.primary:disabled {
   opacity: 0.55;
 }
 
+button.danger {
+  background: #5a2b2b;
+  color: #ffb4b4;
+  border-color: #7a3b3b;
+}
+button.danger:hover:not(:disabled) { background: #6e3535; }
+button.danger:active:not(:disabled) { background: #4a2323; }
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+.modal[hidden] { display: none; }
+
+.modal-panel {
+  background: #2a2c31;
+  border: 1px solid #4a4b50;
+  border-radius: 6px;
+  padding: 1.2rem 1.5rem;
+  min-width: 320px;
+  max-width: 480px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.modal-panel p {
+  margin: 0 0 1rem 0;
+  line-height: 1.4;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 main {
   flex: 1 1 auto;
   display: grid;

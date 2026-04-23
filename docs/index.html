@@ -22,6 +22,7 @@
           <option value="gam">.gam</option>
         </select>
         <button type="button" id="download">Download</button>
+        <button type="button" id="reset" class="danger" title="replace the source with the starter example">Reset</button>
         <button
           type="button"
           id="run"
@@ -55,6 +56,15 @@
       <a href="https://www.npmjs.com/package/c8080">npm</a> ·
       <a href="https://github.com/alexey-f-morozov/c8080">upstream</a>
     </footer>
+    <div id="confirm-modal" class="modal" hidden>
+      <div class="modal-panel" role="dialog" aria-modal="true">
+        <p id="confirm-message"></p>
+        <div class="modal-actions">
+          <button type="button" id="confirm-cancel">Cancel</button>
+          <button type="button" id="confirm-ok" class="primary">OK</button>
+        </div>
+      </div>
+    </div>
     <script type="module" src="playground.js"></script>
   </body>
 </html>

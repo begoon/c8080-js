@@ -136,6 +136,43 @@ async function init(): Promise<void> {
   const runBtn = document.getElementById("run") as HTMLButtonElement;
   const downloadBtn = document.getElementById("download") as HTMLButtonElement;
   const downloadFmt = document.getElementById("download-format") as HTMLSelectElement;
+  const resetBtn = document.getElementById("reset") as HTMLButtonElement;
+  const confirmModal = document.getElementById("confirm-modal") as HTMLDivElement;
+  const confirmMessage = document.getElementById("confirm-message") as HTMLParagraphElement;
+  const confirmOk = document.getElementById("confirm-ok") as HTMLButtonElement;
+  const confirmCancel = document.getElementById("confirm-cancel") as HTMLButtonElement;
+
+  let confirmResolver: ((ok: boolean) => void) | null = null;
+  const askConfirm = (message: string): Promise<boolean> => {
+    confirmMessage.textContent = message;
+    confirmModal.hidden = false;
+    confirmOk.focus();
+    return new Promise((resolve) => { confirmResolver = resolve; });
+  };
+  const closeConfirm = (result: boolean): void => {
+    confirmModal.hidden = true;
+    const r = confirmResolver;
+    confirmResolver = null;
+    if (r) r(result);
+  };
+  confirmOk.addEventListener("click", () => closeConfirm(true));
+  confirmCancel.addEventListener("click", () => closeConfirm(false));
+  confirmModal.addEventListener("click", (e) => { if (e.target === confirmModal) closeConfirm(false); });
+  window.addEventListener("keydown", (e) => {
+    if (confirmModal.hidden) return;
+    if (e.key === "Escape") closeConfirm(false);
+    if (e.key === "Enter") closeConfirm(true);
+  });
+
+  resetBtn.addEventListener("click", async () => {
+    const ok = await askConfirm("Reset the editor to the starter example? Your current edits will be lost.");
+    if (!ok) return;
+    const fresh = await fetchInitialSource();
+    srcEl.value = fresh;
+    localStorage.setItem(STORAGE_KEY, fresh);
+    run();
+    srcEl.focus();
+  });
 
   let latest: Result | null = null;
 
