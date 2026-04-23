@@ -1,4 +1,12 @@
-export type OutputFormat = "cpm" | "iskra1080" | "rks";
+export type OutputFormat =
+  | "cpm"
+  | "iskra1080"
+  | "rks"
+  | "bin"
+  | "rk"
+  | "rkr"
+  | "pki"
+  | "gam";
 
 export type Options = {
   outputFormat: OutputFormat;
@@ -67,5 +75,22 @@ function parseOutputFormat(s: string): OutputFormat | null {
   if (k === "cpm") return "cpm";
   if (k === "i1080" || k === "iskra1080") return "iskra1080";
   if (k === "rks") return "rks";
+  if (k === "bin") return "bin";
+  if (k === "rk") return "rk";
+  if (k === "rkr") return "rkr";
+  if (k === "pki") return "pki";
+  if (k === "gam") return "gam";
   return null;
+}
+
+// Output filename extension per format. For CP/M we stick with `.bin`.
+export function formatExtension(fmt: OutputFormat): string {
+  switch (fmt) {
+    case "cpm": case "bin": case "iskra1080": return "bin";
+    case "rks": return "rks";
+    case "rk":  return "rk";
+    case "rkr": return "rkr";
+    case "pki": return "pki";
+    case "gam": return "gam";
+  }
 }

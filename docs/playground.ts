@@ -6,24 +6,39 @@ import { MemoryFileSystem } from "../src/frontend/fs.ts";
 import { Preprocessor } from "../src/frontend/preprocessor.ts";
 import { Lex } from "../src/frontend/lex.ts";
 import { Parser } from "../src/frontend/parser.ts";
-import { asm as assemble, AsmError } from "asm8080";
+import { asm as assemble, AsmError, wrapRk86File } from "asm8080";
 
 type Result = {
   asm: string;
   warnings: readonly string[];
   bytes: Uint8Array | null;
+  rkStart: number;
+  rkEnd: number;
   error: string | null;
 };
 
-const DEFAULT_SOURCE = `// c8080 playground.
-// Edit below — the asm output refreshes on every keystroke.
+const DEFAULT_SOURCE = `// c8080 playground — edit below, recompiles on every keystroke.
+// "Run" assembles an .rk tape file and boots it on the rk86.ru emulator.
+// Radio-86RK monitor entry points: 0xF818 prints ASCIIZ from HL,
+// 0xF86C returns to the monitor prompt.
+
+char *msg = "Aloha!";
+
+void print(char *s) {
+    asm { CALL  0F818h }
+}
 
 int main(void) {
-  int i;
-  for (i = 1; i <= 5; i = i + 1) printf("i=%d, sq=%d\\n", i, i * i);
-  return 0;
+    print(msg);
+    asm { JMP   0F86Ch }
+    return 0;
 }
 `;
+
+// The playground uses ORG 0 — the same origin the RK tape-wrappers expect.
+// The `rkStart`/`rkEnd` range tracks the actual code span so we can feed
+// it to wrapRk86File for the Run button.
+const PLAYGROUND_ORG = 0;
 
 function compile(source: string): Result {
   try {
@@ -31,29 +46,34 @@ function compile(source: string): Result {
     const pp = new Preprocessor({ fs });
     pp.openFile("/a.c");
     const program = new Parser(new Lex(pp)).parseProgram();
-    const { asm: asmSource, warnings } = compileProgram(program, { org: 0x0100 });
+    const { asm: asmSource, warnings } = compileProgram(program, { org: PLAYGROUND_ORG });
     let bytes: Uint8Array | null = null;
+    let rkStart = 0;
+    let rkEnd = 0;
     try {
       const sections = assemble(asmSource);
       if (sections.length > 0) {
         const sorted = [...sections].sort((a, b) => a.start - b.start);
-        const maxEnd = sorted[sorted.length - 1]!.end;
-        const buf = new Uint8Array(maxEnd + 1);
-        for (const s of sections) buf.set(s.data, s.start);
+        rkStart = sorted[0]!.start;
+        rkEnd = sorted[sorted.length - 1]!.end;
+        const buf = new Uint8Array(rkEnd - rkStart + 1);
+        for (const s of sections) buf.set(s.data, s.start - rkStart);
         bytes = buf;
       }
     } catch (e) {
       const msg = e instanceof AsmError
         ? `asm8080 ${e.line}:${e.column}: ${e.message}`
         : (e as Error).message;
-      return { asm: asmSource, warnings, bytes: null, error: msg };
+      return { asm: asmSource, warnings, bytes: null, rkStart: 0, rkEnd: 0, error: msg };
     }
-    return { asm: asmSource, warnings, bytes, error: null };
+    return { asm: asmSource, warnings, bytes, rkStart, rkEnd, error: null };
   } catch (e) {
     return {
       asm: "",
       warnings: [],
       bytes: null,
+      rkStart: 0,
+      rkEnd: 0,
       error: (e as Error).message,
     };
   }
@@ -99,20 +119,41 @@ function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): (...
   };
 }
 
+function toBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]!);
+  return btoa(s);
+}
+
+const EMULATOR_URL = "https://rk86.ru/beta/index.html";
+
 function init(): void {
   const srcEl = document.getElementById("source") as HTMLTextAreaElement;
   const asmEl = document.getElementById("asm") as HTMLPreElement;
   const errEl = document.getElementById("error") as HTMLDivElement;
   const statusEl = document.getElementById("status") as HTMLDivElement;
   const bytesEl = document.getElementById("bytes") as HTMLPreElement;
+  const runBtn = document.getElementById("run") as HTMLButtonElement;
+
+  let latest: Result | null = null;
 
   const saved = localStorage.getItem(STORAGE_KEY);
   srcEl.value = saved ?? DEFAULT_SOURCE;
+
+  runBtn.addEventListener("click", () => {
+    if (!latest || !latest.bytes || latest.error) return;
+    const rk = wrapRk86File(latest.bytes, latest.rkStart, latest.rkEnd, "rk");
+    const dataUrl = `data:;name=c8080-playground.rk;base64,${toBase64(rk)}`;
+    const url = new URL(EMULATOR_URL);
+    url.searchParams.set("run", dataUrl);
+    window.open(url.toString(), "_blank", "noopener");
+  });
 
   const run = (): void => {
     const t0 = performance.now();
     const result = compile(srcEl.value);
     const t1 = performance.now();
+    latest = result;
     asmEl.textContent = result.asm || "(no output)";
     if (result.error) {
       errEl.textContent = result.error;
@@ -123,16 +164,17 @@ function init(): void {
     }
     const parts: string[] = [];
     parts.push(`${(t1 - t0).toFixed(1)} ms`);
-    if (result.bytes) parts.push(`${result.bytes.length - 0x0100} bytes`);
+    if (result.bytes) parts.push(`${result.bytes.length} bytes @ ${result.rkStart.toString(16).toUpperCase()}h–${result.rkEnd.toString(16).toUpperCase()}h`);
     if (result.warnings.length > 0) parts.push(`${result.warnings.length} warning${result.warnings.length === 1 ? "" : "s"}`);
     statusEl.textContent = parts.join(" · ");
     if (result.bytes) {
-      bytesEl.textContent = formatBytes(result.bytes, 0);
+      bytesEl.textContent = formatBytes(result.bytes, result.rkStart);
       bytesEl.hidden = false;
     } else {
       bytesEl.textContent = "";
       bytesEl.hidden = true;
     }
+    runBtn.disabled = !result.bytes || result.error !== null;
     localStorage.setItem(STORAGE_KEY, srcEl.value);
   };
 

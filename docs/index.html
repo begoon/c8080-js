@@ -9,7 +9,15 @@
   <body>
     <header>
       <h1>c8080 <span class="sub">C → Intel 8080 asm, in your browser</span></h1>
-      <div class="status" id="status"></div>
+      <div class="toolbar">
+        <div class="status" id="status"></div>
+        <button
+          type="button"
+          id="run"
+          class="primary"
+          title="assemble as .rk and boot on rk86.ru/beta"
+        >Run on RK86 ▸</button>
+      </div>
     </header>
     <main>
       <section class="pane">
@@ -27,7 +35,7 @@
         <div class="pane-title">output.asm</div>
         <pre id="asm"></pre>
         <div id="error" class="error" hidden></div>
-        <div class="pane-title secondary">bytes (from ORG 0x0100)</div>
+        <div class="pane-title secondary">bytes</div>
         <pre id="bytes" hidden></pre>
       </section>
     </main>

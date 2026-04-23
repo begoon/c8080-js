@@ -35,10 +35,36 @@ h1 {
   margin-left: 0.5rem;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .status {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.8rem;
   opacity: 0.75;
+}
+
+button.primary {
+  font: inherit;
+  font-size: 0.85rem;
+  background: #2e7d32;
+  color: #fff;
+  border: 1px solid #1b5e20;
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button.primary:hover:not(:disabled) { background: #388e3c; }
+button.primary:active:not(:disabled) { background: #1b5e20; }
+button.primary:disabled {
+  background: #3a3b40;
+  color: #888;
+  border-color: #2a2b30;
+  cursor: not-allowed;
 }
 
 main {

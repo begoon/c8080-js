@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { parseArgs } from "../src/cli.ts";
+import { parseArgs, formatExtension } from "../src/cli.ts";
 import { NodeFileSystem } from "../src/frontend/node-fs.ts";
 import { Preprocessor } from "../src/frontend/preprocessor.ts";
 import { Lex } from "../src/frontend/lex.ts";
 import { Parser } from "../src/frontend/parser.ts";
 import { dumpProgram } from "../src/util/dump.ts";
 import { compileProgram } from "../src/codegen/i8080/compile.ts";
-import { wrapRks } from "../src/formats/rks.ts";
+import { wrapForFormat } from "../src/formats/wrap.ts";
 import { dirname, resolve as pathResolve, basename } from "node:path";
 import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -103,14 +103,16 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    const org = opts.outputFormat === "rks" ? 0 : 0x0100;
+    // CP/M + Iskra expect code at ORG 0x0100 (TPA). All other formats (bare
+    // bin, rks, and the RK86 tape envelopes) use ORG 0.
+    const org = opts.outputFormat === "cpm" || opts.outputFormat === "iskra1080" ? 0x0100 : 0;
     const { asm: asmSource, warnings } = compileProgram(finalProgram, { org });
     for (const w of warnings) console.error(`warning: ${w}`);
 
     const firstSource = opts.sources[0]!;
     const base = basename(firstSource).replace(/\.[^.]+$/, "");
     const asmPath = opts.asmFile ?? `${base}.asm`;
-    const binPath = opts.binFile ?? `${base}.bin`;
+    const binPath = opts.binFile ?? `${base}.${formatExtension(opts.outputFormat)}`;
 
     writeFileSync(asmPath, asmSource);
 
@@ -137,13 +139,17 @@ async function main(): Promise<number> {
         return 1;
       }
     }
-    // Mirror asm8080's `.bin` layout: zero-fill from 0 up to the highest
-    // section end so CP/M .bin files load correctly after being copied to
-    // address 0x0100.
+    // For `.bin` (CP/M/Iskra), keep the zero-fill from address 0 so the file
+    // loads at 0x0100. For the RK86 tape formats, pack tight from the
+    // first-section start.
+    const firstStart = sorted[0]!.start;
     const maxEnd = sorted[sorted.length - 1]!.end;
-    const buf = new Uint8Array(maxEnd + 1);
-    for (const s of sections) buf.set(s.data, s.start);
-    const payload = opts.outputFormat === "rks" ? wrapRks(buf) : buf;
+    const bufOrigin = (opts.outputFormat === "cpm" || opts.outputFormat === "iskra1080" || opts.outputFormat === "bin")
+      ? 0
+      : firstStart;
+    const buf = new Uint8Array(maxEnd - bufOrigin + 1);
+    for (const s of sections) buf.set(s.data, s.start - bufOrigin);
+    const payload = wrapForFormat(buf, firstStart, maxEnd, opts.outputFormat);
     writeFileSync(binPath, payload);
     console.log("Done");
     return 0;

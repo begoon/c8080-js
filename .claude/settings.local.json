@@ -39,7 +39,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8733/style.css)",
       "Bash(curl -s http://localhost:8733/)",
       "Bash(pkill -f \"http.server 8733\")",
-      "Bash(pkill -f \"http.server 8734\")"
+      "Bash(pkill -f \"http.server 8734\")",
+      "Bash(just --version)",
+      "Bash(just *)"
     ]
   }
 }
