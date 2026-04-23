@@ -138,7 +138,44 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-const EMULATOR_URL = "https://rk86.ru/beta/index.html";
+// Emulator URL defaults to the public rk86.ru beta. A same-origin embed can
+// override this with `window.c8080EmulatorUrl = "../"` in conf.js (loaded
+// before playground.js).
+const EMULATOR_URL_DEFAULT = "https://rk86.ru/beta/index.html";
+const EMULATOR_URL =
+  (window as unknown as { c8080EmulatorUrl?: string }).c8080EmulatorUrl ?? EMULATOR_URL_DEFAULT;
+
+// Same-origin handoff lets the playground pass arbitrarily large binaries
+// to the emulator through localStorage, sidestepping Chrome's URL-length
+// cap (~2 MB HTTP 431) that bites the cross-origin `?run=<dataUrl>` path.
+// The emulator reads and deletes the key one-shot when `?handoff=<id>` is
+// present in its URL.
+const HANDOFF_PREFIX = "c8080-handoff:";
+const HANDOFF_TTL_MS = 60 * 60 * 1000;
+
+function sweepStaleHandoffs(): void {
+  try {
+    const now = Date.now();
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(HANDOFF_PREFIX)) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw) as { ts?: number };
+        if (!parsed.ts || now - parsed.ts > HANDOFF_TTL_MS) localStorage.removeItem(key);
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {}
+}
+
+function newHandoffId(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+}
 
 async function init(): Promise<void> {
   const srcEl = document.getElementById("source") as HTMLTextAreaElement;
@@ -242,9 +279,21 @@ async function init(): Promise<void> {
     if (!latest || !latest.bytes || latest.error) return;
     const rk = wrapRk86File(latest.bytes, latest.rkStart, latest.rkEnd, "rk");
     const dataUrl = `data:;name=c8080-playground.rk;base64,${toBase64(rk)}`;
-    const url = new URL(EMULATOR_URL);
-    url.searchParams.set("run", dataUrl);
-    window.open(url.toString(), "_blank", "noopener");
+    const target = new URL(EMULATOR_URL, location.href);
+    if (target.origin === location.origin) {
+      sweepStaleHandoffs();
+      const id = newHandoffId();
+      try {
+        localStorage.setItem(HANDOFF_PREFIX + id, JSON.stringify({ ts: Date.now(), url: dataUrl }));
+      } catch (e) {
+        alert(`localStorage unavailable, cannot hand off to emulator: ${(e as Error).message}`);
+        return;
+      }
+      target.searchParams.set("handoff", id);
+    } else {
+      target.searchParams.set("run", dataUrl);
+    }
+    window.open(target.toString(), "_blank", "noopener");
   });
 
   const run = (): void => {

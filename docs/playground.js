@@ -5568,7 +5568,36 @@ function toBase64(bytes) {
     s += String.fromCharCode(bytes[i]);
   return btoa(s);
 }
-var EMULATOR_URL = "https://rk86.ru/beta/index.html";
+var EMULATOR_URL_DEFAULT = "https://rk86.ru/beta/index.html";
+var EMULATOR_URL = window.c8080EmulatorUrl ?? EMULATOR_URL_DEFAULT;
+var HANDOFF_PREFIX = "c8080-handoff:";
+var HANDOFF_TTL_MS = 60 * 60 * 1000;
+function sweepStaleHandoffs() {
+  try {
+    const now = Date.now();
+    for (let i = localStorage.length - 1;i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(HANDOFF_PREFIX))
+        continue;
+      const raw = localStorage.getItem(key);
+      if (!raw)
+        continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed.ts || now - parsed.ts > HANDOFF_TTL_MS)
+          localStorage.removeItem(key);
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {}
+}
+function newHandoffId() {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function")
+    return c.randomUUID();
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+}
 async function init() {
   const srcEl = document.getElementById("source");
   const asmEl = document.getElementById("asm");
@@ -5683,9 +5712,21 @@ async function init() {
       return;
     const rk = wrapRk86File(latest.bytes, latest.rkStart, latest.rkEnd, "rk");
     const dataUrl = `data:;name=c8080-playground.rk;base64,${toBase64(rk)}`;
-    const url = new URL(EMULATOR_URL);
-    url.searchParams.set("run", dataUrl);
-    window.open(url.toString(), "_blank", "noopener");
+    const target = new URL(EMULATOR_URL, location.href);
+    if (target.origin === location.origin) {
+      sweepStaleHandoffs();
+      const id = newHandoffId();
+      try {
+        localStorage.setItem(HANDOFF_PREFIX + id, JSON.stringify({ ts: Date.now(), url: dataUrl }));
+      } catch (e) {
+        alert(`localStorage unavailable, cannot hand off to emulator: ${e.message}`);
+        return;
+      }
+      target.searchParams.set("handoff", id);
+    } else {
+      target.searchParams.set("run", dataUrl);
+    }
+    window.open(target.toString(), "_blank", "noopener");
   });
   const run = () => {
     const t0 = performance.now();
