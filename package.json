@@ -1,16 +1,24 @@
 {
-  "name": "c8080-js",
-  "version": "0.0.1",
-  "description": "C compiler for Intel 8080, TypeScript port of c8080",
+  "name": "c8080",
+  "version": "0.1.0",
+  "description": "C compiler for Intel 8080 / КР580ВМ80А — TypeScript port of Aleksey Morozov's c8080",
   "type": "module",
-  "module": "src/cli.ts",
   "bin": {
-    "c8080": "bin/c8080.ts"
+    "c8080": "dist/c8080.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "test": "bun test",
-    "build": "bun build --compile --target=bun-darwin-arm64 bin/c8080.ts --outfile dist/c8080",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "bun build bin/c8080.ts --target=node --format=esm --external=asm8080 --outfile=dist/c8080.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "asm8080": "^1.0.26"
@@ -18,5 +26,17 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5.6.0"
-  }
+  },
+  "keywords": [
+    "8080",
+    "i8080",
+    "intel-8080",
+    "retro",
+    "compiler",
+    "cp/m",
+    "rk86",
+    "radio-86rk",
+    "c"
+  ],
+  "license": "GPL-3.0"
 }

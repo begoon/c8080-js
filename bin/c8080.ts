@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { parseArgs } from "../src/cli.ts";
 import { NodeFileSystem } from "../src/frontend/fs.ts";
 import { Preprocessor } from "../src/frontend/preprocessor.ts";
@@ -8,8 +8,9 @@ import { dumpProgram } from "../src/util/dump.ts";
 import { compileProgram } from "../src/codegen/i8080/compile.ts";
 import { wrapRks } from "../src/formats/rks.ts";
 import { dirname, resolve as pathResolve, basename } from "node:path";
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
-import { $ } from "bun";
+import { existsSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { asm, AsmError } from "asm8080";
 
 function usage(): void {
   console.log(`Usage: c8080 [options] file1.c file2.c ...
@@ -35,7 +36,7 @@ async function main(): Promise<number> {
     const opts = parseArgs(argv);
     if (opts.sources.length === 0) { usage(); return 0; }
 
-    const selfDir = dirname(pathResolve(process.argv[1] ?? ""));
+    const selfDir = dirname(fileURLToPath(import.meta.url));
     const bundledInclude = pathResolve(selfDir, "..", "include");
     const includeDirs = [...opts.includeDirs];
     if (existsSync(bundledInclude)) includeDirs.push(bundledInclude);
@@ -103,7 +104,7 @@ async function main(): Promise<number> {
     }
 
     const org = opts.outputFormat === "rks" ? 0 : 0x0100;
-    const { asm, warnings } = compileProgram(finalProgram, { org });
+    const { asm: asmSource, warnings } = compileProgram(finalProgram, { org });
     for (const w of warnings) console.error(`warning: ${w}`);
 
     const firstSource = opts.sources[0]!;
@@ -111,34 +112,39 @@ async function main(): Promise<number> {
     const asmPath = opts.asmFile ?? `${base}.asm`;
     const binPath = opts.binFile ?? `${base}.bin`;
 
-    writeFileSync(asmPath, asm);
+    writeFileSync(asmPath, asmSource);
 
-    // Assemble via asm8080.
-    const asmDir = dirname(pathResolve(asmPath));
-    const asmName = basename(asmPath);
-    const r = await $`bunx asm8080 ${asmName} -o ${asmDir}`.cwd(asmDir).nothrow().quiet();
-    if (r.exitCode !== 0) {
-      console.error(r.stderr.toString());
-      console.error(r.stdout.toString());
-      return r.exitCode;
+    // Assemble in-process via the asm8080 library (replaces shelling out to
+    // `bunx asm8080`, so the published package works on plain Node).
+    let sections;
+    try {
+      sections = asm(asmSource);
+    } catch (e) {
+      if (e instanceof AsmError) {
+        console.error(`${asmPath}:${e.line}:${e.column}: error: ${e.message}`);
+        return 1;
+      }
+      throw e;
     }
-
-    // asm8080 writes <base>.bin next to the input.
-    const producedBin = pathResolve(asmDir, `${base}.bin`);
-    if (!existsSync(producedBin)) {
-      console.error(`asm8080 did not produce ${producedBin}`);
+    if (sections.length === 0) {
+      console.error("asm8080 produced no output sections");
       return 1;
     }
-
-    if (opts.outputFormat === "rks") {
-      const raw = new Uint8Array(readFileSync(producedBin));
-      writeFileSync(binPath, wrapRks(raw));
-      if (pathResolve(binPath) !== producedBin) unlinkSync(producedBin);
-    } else if (pathResolve(binPath) !== producedBin) {
-      const raw = readFileSync(producedBin);
-      writeFileSync(binPath, raw);
-      unlinkSync(producedBin);
+    const sorted = [...sections].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i]!.start <= sorted[i - 1]!.end) {
+        console.error(`error: sections overlap (${hex4(sorted[i - 1]!.start)}-${hex4(sorted[i - 1]!.end)} and ${hex4(sorted[i]!.start)}-${hex4(sorted[i]!.end)})`);
+        return 1;
+      }
     }
+    // Mirror asm8080's `.bin` layout: zero-fill from 0 up to the highest
+    // section end so CP/M .bin files load correctly after being copied to
+    // address 0x0100.
+    const maxEnd = sorted[sorted.length - 1]!.end;
+    const buf = new Uint8Array(maxEnd + 1);
+    for (const s of sections) buf.set(s.data, s.start);
+    const payload = opts.outputFormat === "rks" ? wrapRks(buf) : buf;
+    writeFileSync(binPath, payload);
     console.log("Done");
     return 0;
   } catch (e) {
@@ -190,5 +196,7 @@ function resolveLinked(rel: string, sourceFile: string, includeDirs: readonly st
   }
   return null;
 }
+
+function hex4(n: number): string { return n.toString(16).padStart(4, "0").toUpperCase(); }
 
 process.exit(await main());

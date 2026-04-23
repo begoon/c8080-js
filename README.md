@@ -1,8 +1,35 @@
-# c8080-js
+# c8080
 
-Intel 8080 C compiler in TypeScript, running on Bun. A port-in-progress of
+Intel 8080 C compiler in TypeScript. Port of
 [c8080](https://github.com/alexey-f-morozov/c8080) (Aleksey Morozov's C++
-compiler for i8080 / КР580ВМ80А platforms).
+compiler for i8080 / КР580ВМ80А platforms). Runs on Node 18+ and Bun.
+
+## Install
+
+```bash
+npm install -g c8080          # exposes `c8080`
+# or one-shot without install:
+npx c8080 file.c
+```
+
+## Use
+
+```bash
+c8080 [-V] [-Ocpm|-Orks] [-I<dir>] [-D<name>] [-o<bin>] file.c
+```
+
+`-Ocpm` (default) emits a `.bin` loadable at CP/M TPA (`ORG 0x0100`).
+`-Orks` emits a Radio-86RK / Specialist tape envelope.
+
+## Develop
+
+```bash
+bun install
+bun test           # 164 tests (end-to-end compile + simulate)
+bun run typecheck  # tsc --noEmit
+bun run build      # bundle → dist/c8080.js (for npm publish)
+bun bin/c8080.ts file.c   # run from source
+```
 
 ## Status
 
@@ -10,13 +37,6 @@ End-to-end pipeline: **C source → preprocess → parse → demand-link
 (`__link`) → codegen → asm → [asm8080](https://www.npmjs.com/package/asm8080)
 → binary**. Compiled programs actually run on an in-process 8080 simulator
 that intercepts CP/M BDOS calls at `0x0005` for I/O.
-
-```bash
-bun install
-bun test           # 145 tests (51 end-to-end that compile + simulate)
-bun run typecheck  # tsc --noEmit
-bun bin/c8080.ts [-V] [-Ocpm|-Orks] [-I<dir>] [-D<name>] [-o<bin>] file.c
-```
 
 ### Real-c8080-stdlib demo
 
