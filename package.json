@@ -1,6 +1,6 @@
 {
   "name": "c8080",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "C compiler for Intel 8080 / КР580ВМ80А — TypeScript port of Aleksey Morozov's c8080",
   "type": "module",
   "bin": {
