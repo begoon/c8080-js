@@ -31,7 +31,15 @@
       "Bash(npm init *)",
       "Bash(npm install *)",
       "Bash(npx c8080 *)",
-      "Bash(rm -rf /tmp/c8080-install-test)"
+      "Bash(rm -rf /tmp/c8080-install-test)",
+      "Bash(python3 -m http.server 8733)",
+      "Bash(curl -s http://localhost:8733/playground.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8733/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8733/playground.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8733/style.css)",
+      "Bash(curl -s http://localhost:8733/)",
+      "Bash(pkill -f \"http.server 8733\")",
+      "Bash(pkill -f \"http.server 8734\")"
     ]
   }
 }

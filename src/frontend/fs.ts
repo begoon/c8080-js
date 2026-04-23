@@ -1,30 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve as pathResolve, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface FileSystem {
   readText(path: string): string | null;
   exists(path: string): boolean;
   resolve(...parts: string[]): string;
   dirname(path: string): string;
-}
-
-export class NodeFileSystem implements FileSystem {
-  readText(path: string): string | null {
-    try {
-      return readFileSync(path, "utf8");
-    } catch {
-      return null;
-    }
-  }
-  exists(path: string): boolean {
-    return existsSync(path);
-  }
-  resolve(...parts: string[]): string {
-    return pathResolve(...parts);
-  }
-  dirname(path: string): string {
-    return dirname(path);
-  }
 }
 
 export class MemoryFileSystem implements FileSystem {

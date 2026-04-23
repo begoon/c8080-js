@@ -1,0 +1,144 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: ui-sans-serif, -apple-system, system-ui, sans-serif;
+  background: #1e1f22;
+  color: #d7d7d7;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #33353a;
+  background: #2a2c31;
+}
+
+h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.sub {
+  font-weight: 400;
+  opacity: 0.6;
+  font-size: 0.85rem;
+  margin-left: 0.5rem;
+}
+
+.status {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+main {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: #33353a;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  background: #1e1f22;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pane-title {
+  padding: 0.3rem 0.75rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+  background: #25272b;
+  border-bottom: 1px solid #33353a;
+  flex: 0 0 auto;
+}
+
+.pane-title.secondary { margin-top: auto; }
+
+#source {
+  flex: 1 1 auto;
+  width: 100%;
+  padding: 0.75rem;
+  background: #1e1f22;
+  color: #d7d7d7;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 4;
+}
+
+#asm, #bytes {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+  color: #c8e6c9;
+}
+
+#bytes {
+  color: #90caf9;
+  max-height: 30%;
+  border-top: 1px solid #33353a;
+  flex: 0 0 auto;
+}
+
+.error {
+  padding: 0.5rem 0.75rem;
+  margin: 0;
+  background: #3a1d1d;
+  color: #ffb4b4;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  border-top: 1px solid #5a2b2b;
+  flex: 0 0 auto;
+}
+
+footer {
+  padding: 0.4rem 1rem;
+  border-top: 1px solid #33353a;
+  background: #2a2c31;
+  font-size: 0.75rem;
+  opacity: 0.55;
+  text-align: right;
+}
+
+footer a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+footer a:hover { opacity: 0.9; }
+
+@media (max-width: 720px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}

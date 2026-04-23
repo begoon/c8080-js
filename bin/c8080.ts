@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "../src/cli.ts";
-import { NodeFileSystem } from "../src/frontend/fs.ts";
+import { NodeFileSystem } from "../src/frontend/node-fs.ts";
 import { Preprocessor } from "../src/frontend/preprocessor.ts";
 import { Lex } from "../src/frontend/lex.ts";
 import { Parser } from "../src/frontend/parser.ts";

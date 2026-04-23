@@ -18,6 +18,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build bin/c8080.ts --target=node --format=esm --external=asm8080 --outfile=dist/c8080.js",
+    "build:playground": "bun build docs/playground.ts --target=browser --format=esm --outfile=docs/playground.js",
+    "serve:playground": "bun run build:playground && cd docs && python3 -m http.server 8733",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
