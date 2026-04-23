@@ -5536,6 +5536,24 @@ function formatBytes(bytes, origin) {
 `);
 }
 var STORAGE_KEY = "c8080-playground-source";
+var THEME_KEY = "c8080-playground-theme";
+function loadTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+function saveTheme(t) {
+  try {
+    localStorage.setItem(THEME_KEY, t);
+  } catch {}
+}
+function applyTheme(t, btn) {
+  document.body.classList.toggle("theme-light", t === "light");
+  if (btn)
+    btn.textContent = t === "light" ? "dark" : "light";
+}
 function debounce(fn, ms) {
   let handle = null;
   return (...args) => {
@@ -5561,6 +5579,7 @@ async function init() {
   const downloadBtn = document.getElementById("download");
   const downloadFmt = document.getElementById("download-format");
   const resetBtn = document.getElementById("reset");
+  const themeBtn = document.getElementById("theme");
   const confirmModal = document.getElementById("confirm-modal");
   const confirmMessage = document.getElementById("confirm-message");
   const confirmOk = document.getElementById("confirm-ok");
@@ -5594,6 +5613,12 @@ async function init() {
       closeConfirm(false);
     if (e.key === "Enter")
       closeConfirm(true);
+  });
+  applyTheme(loadTheme(), themeBtn);
+  themeBtn.addEventListener("click", () => {
+    const next = document.body.classList.contains("theme-light") ? "dark" : "light";
+    applyTheme(next, themeBtn);
+    saveTheme(next);
   });
   resetBtn.addEventListener("click", async () => {
     const ok = await askConfirm("Reset the editor to the starter example? Your current edits will be lost.");

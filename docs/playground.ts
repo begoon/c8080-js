@@ -110,6 +110,19 @@ function formatBytes(bytes: Uint8Array, origin: number): string {
 }
 
 const STORAGE_KEY = "c8080-playground-source";
+const THEME_KEY = "c8080-playground-theme";
+type Theme = "dark" | "light";
+
+function loadTheme(): Theme {
+  try { return localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"; } catch { return "dark"; }
+}
+function saveTheme(t: Theme): void {
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
+}
+function applyTheme(t: Theme, btn: HTMLButtonElement | null): void {
+  document.body.classList.toggle("theme-light", t === "light");
+  if (btn) btn.textContent = t === "light" ? "dark" : "light";
+}
 
 function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): (...args: Parameters<T>) => void {
   let handle: ReturnType<typeof setTimeout> | null = null;
@@ -137,6 +150,7 @@ async function init(): Promise<void> {
   const downloadBtn = document.getElementById("download") as HTMLButtonElement;
   const downloadFmt = document.getElementById("download-format") as HTMLSelectElement;
   const resetBtn = document.getElementById("reset") as HTMLButtonElement;
+  const themeBtn = document.getElementById("theme") as HTMLButtonElement;
   const confirmModal = document.getElementById("confirm-modal") as HTMLDivElement;
   const confirmMessage = document.getElementById("confirm-message") as HTMLParagraphElement;
   const confirmOk = document.getElementById("confirm-ok") as HTMLButtonElement;
@@ -162,6 +176,13 @@ async function init(): Promise<void> {
     if (confirmModal.hidden) return;
     if (e.key === "Escape") closeConfirm(false);
     if (e.key === "Enter") closeConfirm(true);
+  });
+
+  applyTheme(loadTheme(), themeBtn);
+  themeBtn.addEventListener("click", () => {
+    const next: Theme = document.body.classList.contains("theme-light") ? "dark" : "light";
+    applyTheme(next, themeBtn);
+    saveTheme(next);
   });
 
   resetBtn.addEventListener("click", async () => {
