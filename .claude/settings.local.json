@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.npmjs.com)",
+      "WebSearch",
+      "Bash(bunx --help)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "Bash(bunx --bun asm8080 --help)",
+      "WebFetch(domain:github.com)",
+      "Bash(/Users/alexander/github/c8080/c8080.14-08-2025.macos -A/Users/alexander/github/c8080/include/sjasmplus.macos -a/tmp/hello.asm -o/tmp/hello.bin /tmp/hello.c)",
+      "Bash(cat)",
+      "Bash(bun run *)",
+      "Bash(bun install *)",
+      "Bash(bun test *)",
+      "Bash(bun bin/c8080.ts)",
+      "Bash(bun bin/c8080.ts -Orks -DARCH_SPECIALIST -Ispec -ogame.rks game.c)"
+    ]
+  }
+}
