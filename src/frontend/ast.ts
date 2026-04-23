@@ -56,6 +56,10 @@ export type BinaryOp =
   | "logand" | "logor"
   | "comma";
 
+export type InitializerValue =
+  | { readonly kind: "expr"; readonly expr: CNode }
+  | { readonly kind: "list"; readonly items: readonly InitializerValue[] };
+
 export type CVariable = {
   readonly name: string;
   readonly type: CType;
@@ -63,6 +67,7 @@ export type CVariable = {
   readonly address: number | null;
   readonly linkFile: string | null;
   readonly pos: SrcPos;
+  readonly initializer: InitializerValue | null;
 };
 
 export type CFunction = {

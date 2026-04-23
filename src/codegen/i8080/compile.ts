@@ -1,4 +1,4 @@
-import type { CFunction, CNode, CProgram, CType, CVariable } from "../../frontend/ast.ts";
+import type { CFunction, CNode, CProgram, CType, CVariable, InitializerValue } from "../../frontend/ast.ts";
 
 export type CompileResult = {
   readonly asm: string;
@@ -570,6 +570,7 @@ class Emitter {
   private readonly globalVars = new Map<string, CVariable>();
 
   directive(text: string): void { this.lines.push(`    ${text}`); this.lastInstruction = ""; }
+  directiveRaw(text: string): void { this.lines.push(`    ${text}`); this.lastInstruction = ""; }
   blank(): void { this.lines.push(""); }
   label(name: string): void { this.lines.push(`${name}:`); this.lastInstruction = ""; }
   instruction(op: string, operands?: string): void {
@@ -670,9 +671,13 @@ class Emitter {
     if (unique.size === 0 && this.strings.size === 0) return;
     this.blank();
     for (const [name, v] of unique) {
-      const size = Math.max(typeSize(v.type), 1);
       this.label(name);
-      this.directive(`DS   ${size}`);
+      if (v.initializer !== null) {
+        emitInitializerData(this, v.type, v.initializer);
+      } else {
+        const size = Math.max(typeSize(v.type), 1);
+        this.directive(`DS   ${size}`);
+      }
     }
     for (const [text, label] of this.strings) {
       this.label(label);
@@ -826,6 +831,59 @@ __rt_puts_p:
     DS    2
 `,
 };
+
+function emitInitializerData(out: Emitter, type: CType, init: InitializerValue): void {
+  if (init.kind === "expr") {
+    const e = init.expr;
+    // String literal initializing a char array: emit DB "text", 0.
+    if (e.kind === "const" && typeof e.value === "string") {
+      out.directiveRaw(`DB   ${encodeDbString(e.value)}, 0`);
+      const declared = typeSize(type);
+      const actual = e.value.length + 1;
+      if (declared > actual) out.directiveRaw(`DS   ${declared - actual}`);
+      return;
+    }
+    const v = foldConst(e);
+    if (v === null) {
+      out.directiveRaw(`DS   ${Math.max(typeSize(type), 1)}   ; non-constant initializer dropped`);
+      return;
+    }
+    emitScalarBytes(out, type, v);
+    return;
+  }
+  // List initializer.
+  if (type.kind === "array") {
+    let emitted = 0;
+    for (const item of init.items) {
+      emitInitializerData(out, type.of, item);
+      emitted += Math.max(typeSize(type.of), 1);
+    }
+    const total = Math.max(typeSize(type), 1);
+    if (total > emitted) out.directiveRaw(`DS   ${total - emitted}`);
+    return;
+  }
+  // Non-array list initializer: emit each element as a bigint if constant.
+  for (const item of init.items) {
+    if (item.kind === "expr") {
+      const v = foldConst(item.expr);
+      if (v !== null) emitScalarBytes(out, { kind: "base", base: "int" }, v);
+      else out.directiveRaw(`DW   0   ; non-const item`);
+    }
+  }
+}
+
+function emitScalarBytes(out: Emitter, type: CType, value: bigint): void {
+  const size = Math.max(typeSize(type), 1);
+  if (size === 1) out.directiveRaw(`DB   ${(Number(value) & 0xff)}`);
+  else if (size === 2) out.directiveRaw(`DW   ${Number(value) & 0xffff}`);
+  else {
+    // Multi-byte: split into bytes, little-endian.
+    const parts: string[] = [];
+    let v = value;
+    for (let i = 0; i < size; i++) { parts.push(String(Number(v & 0xffn))); v = v >> 8n; }
+    out.directiveRaw(`DB   ${parts.join(", ")}`);
+  }
+}
 
 function encodeDbString(s: string): string {
   const parts: string[] = [];

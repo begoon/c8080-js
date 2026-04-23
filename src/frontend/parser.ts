@@ -7,6 +7,7 @@ import type {
   SrcPos,
   BinaryOp,
   UnaryOp,
+  InitializerValue,
 } from "./ast.ts";
 import { Lex } from "./lex.ts";
 import { SymbolTable } from "./symbols.ts";
@@ -63,11 +64,12 @@ export class Parser {
 
     const firstType = this.wrapArrayBounds(this.wrapPointers(ts.base, starCount));
     this.skipTrailingAttributes();
-    if (this.lex.ifText("=")) this.parseInitializer();
+    let firstInit: InitializerValue | null = null;
+    if (this.lex.ifText("=")) firstInit = this.parseInitializer();
     const firstVar: CVariable = {
       name, type: firstType, pos,
       storage: ts.storage === "auto" ? "global" : ts.storage,
-      address: null, linkFile: null,
+      address: null, linkFile: null, initializer: firstInit,
     };
     globals.push(firstVar);
     this.symbols.declareVariable(firstVar);
@@ -78,11 +80,12 @@ export class Parser {
       const moreName = this.lex.needIdent();
       const moreType = this.wrapArrayBounds(this.wrapPointers(ts.base, moreStars));
       this.skipTrailingAttributes();
-      if (this.lex.ifText("=")) this.parseInitializer();
+      let moreInit: InitializerValue | null = null;
+      if (this.lex.ifText("=")) moreInit = this.parseInitializer();
       const moreVar: CVariable = {
         name: moreName, type: moreType, pos: morePos,
         storage: ts.storage === "auto" ? "global" : ts.storage,
-        address: null, linkFile: null,
+        address: null, linkFile: null, initializer: moreInit,
       };
       globals.push(moreVar);
       this.symbols.declareVariable(moreVar);
@@ -176,7 +179,7 @@ export class Parser {
       const ptype = this.wrapPointers(ts.base, stars);
       params.push({
         name: pname, type: ptype, pos,
-        storage: "auto", address: null, linkFile: null,
+        storage: "auto", address: null, linkFile: null, initializer: null,
       });
       if (!this.lex.ifText(",")) break;
     }
@@ -385,15 +388,19 @@ export class Parser {
       const local: CVariable = {
         name, type, pos: declPos,
         storage: ts.storage === "auto" ? "auto" : ts.storage,
-        address: null, linkFile: null,
+        address: null, linkFile: null, initializer: null,
       };
       this.symbols.declareVariable(local);
       this.currentFunctionLocals.push(local);
-      let value: CNode | null = null;
-      if (this.lex.ifText("=")) value = this.parseInitializer();
-      if (value !== null) {
+      let initExpr: CNode | null = null;
+      if (this.lex.ifText("=")) {
+        const init = this.parseInitializer();
+        if (init.kind === "expr") initExpr = init.expr;
+        // list-initializers for locals not yet supported in codegen — drop.
+      }
+      if (initExpr !== null) {
         const target: CNode = { kind: "var", pos: declPos, name, resolved: local };
-        stmts.push({ kind: "assign", pos: declPos, target, value });
+        stmts.push({ kind: "assign", pos: declPos, target, value: initExpr });
       }
       if (!this.lex.ifText(",")) break;
     }
@@ -401,20 +408,23 @@ export class Parser {
     return { kind: "block", pos, stmts };
   }
 
-  private parseInitializer(): CNode {
+  private parseInitializer(): InitializerValue {
     if (this.lex.ifText("{")) {
-      // Brace-enclosed initializer: capture as empty block node for MVP.
-      const pos = this.pos();
-      let depth = 1;
-      while (depth > 0) {
-        if (this.lex.atEnd()) this.lex.throwHere("unterminated initializer");
-        if (this.lex.ifText("{")) { depth++; continue; }
-        if (this.lex.ifText("}")) { depth--; continue; }
-        this.lex.advance();
+      const items: InitializerValue[] = [];
+      if (!this.lex.ifText("}")) {
+        for (;;) {
+          items.push(this.parseInitializer());
+          if (this.lex.ifText(",")) {
+            if (this.lex.ifText("}")) break;
+            continue;
+          }
+          this.lex.needText("}");
+          break;
+        }
       }
-      return { kind: "const", pos, type: { kind: "base", base: "int" }, value: 0n };
+      return { kind: "list", items };
     }
-    return this.parseAssign();
+    return { kind: "expr", expr: this.parseAssign() };
   }
 
   private parseSwitch(): CNode {

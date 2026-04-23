@@ -202,6 +202,42 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("123");
   });
 
+  test("global scalar initializer", () => {
+    expect(run(`
+      int ANSWER = 42;
+      int main(void) { return ANSWER; }
+    `)).toBe(42);
+  });
+
+  test("global int array initializer", () => {
+    expect(run(`
+      int primes[] = {2, 3, 5, 7, 11};
+      int main(void) { return primes[0] + primes[2] + primes[4]; }
+    `)).toBe(18);
+  });
+
+  test("global char array string initializer", () => {
+    const r = runWithOutput(`
+      char msg[] = "hi!";
+      int main(void) { puts(msg); return 0; }
+    `);
+    expect(r.output).toBe("hi!");
+  });
+
+  test("global byte initializer", () => {
+    expect(run(`
+      char c = 65;
+      int main(void) { return c; }
+    `)).toBe(65);
+  });
+
+  test("initialized lookup table", () => {
+    expect(run(`
+      char digits[] = "0123456789";
+      int main(void) { return digits[7]; }
+    `)).toBe('7'.charCodeAt(0));
+  });
+
   test("int array: read/write with element-size scaling", () => {
     expect(run(`
       int arr[5];

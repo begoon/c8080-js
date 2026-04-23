@@ -50,7 +50,7 @@ export class SymbolTable {
     // Also register as a variable so calls can resolve it uniformly.
     this.stack[0]!.variables.set(f.name, {
       name: f.name, type: f.type, pos: f.pos,
-      storage: "global", address: null, linkFile: null,
+      storage: "global", address: null, linkFile: null, initializer: null,
     });
   }
 
