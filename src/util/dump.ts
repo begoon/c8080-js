@@ -139,6 +139,10 @@ export function dumpNode(n: CNode, indent: string): string[] {
     case "default":
       emit("default");
       break;
+    case "member":
+      emit(`${n.arrow ? "->" : "."}${n.field}`);
+      child(n.object);
+      break;
     case "pushPop":
       emit("push_pop");
       if (n.regs.length > 0) { lines.push(`${indent}  regs:`); for (const r of n.regs) lines.push(...dumpNode(r, indent + "    ")); }

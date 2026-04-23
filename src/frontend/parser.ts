@@ -8,6 +8,7 @@ import type {
   BinaryOp,
   UnaryOp,
   InitializerValue,
+  StructField,
 } from "./ast.ts";
 import { Lex } from "./lex.ts";
 import { SymbolTable } from "./symbols.ts";
@@ -281,17 +282,35 @@ export class Parser {
     this.lex.advance(); // 'struct' or 'union'
     let name = "";
     if (this.lex.kind === "ident" && !this.lex.peekText("{")) name = this.lex.needIdent();
+
     if (this.lex.ifText("{")) {
-      // Definition body — skip members for MVP.
-      let depth = 1;
-      while (depth > 0) {
+      const fields: StructField[] = [];
+      let offset = 0;
+      while (!this.lex.ifText("}")) {
         if (this.lex.atEnd()) this.lex.throwHere("unterminated struct body");
-        if (this.lex.ifText("{")) { depth++; continue; }
-        if (this.lex.ifText("}")) { depth--; continue; }
-        this.lex.advance();
+        const fts = this.parseDeclSpec();
+        for (;;) {
+          const stars = this.parsePointers();
+          const fname = this.lex.needIdent();
+          const ftype = this.wrapArrayBounds(this.wrapPointers(fts.base, stars));
+          const size = Math.max(fieldTypeSize(ftype), 1);
+          fields.push({ name: fname, type: ftype, offset });
+          offset += size;
+          if (!this.lex.ifText(",")) break;
+        }
+        this.lex.needText(";");
       }
+      const type: CType = { kind: "struct", name, fields, size: offset };
+      if (name !== "") this.symbols.declareStruct(name, type);
+      return type;
     }
-    return { kind: "struct", name };
+
+    // Forward reference: lookup prior full definition; else stub.
+    if (name !== "") {
+      const prior = this.symbols.lookupStruct(name);
+      if (prior) return prior;
+    }
+    return { kind: "struct", name, fields: null, size: 0 };
   }
 
   private composeBaseType(parts: string[]): CType {
@@ -724,11 +743,11 @@ export class Parser {
         node = { kind: "unary", pos, op: "deref", arg: plus };
         continue;
       }
-      if (this.lex.ifText(".") || this.lex.peekText("->")) {
-        const isArrow = this.lex.peekText("->");
-        if (isArrow) this.lex.advance();
+      if (this.lex.peekText(".") || this.lex.peekText("->")) {
+        const arrow = this.lex.peekText("->");
+        this.lex.advance();
         const field = this.lex.needIdent();
-        node = { kind: "call", pos, target: { kind: "var", pos, name: `@${isArrow ? "->" : "."}${field}`, resolved: null }, args: [node] };
+        node = { kind: "member", pos, object: node, field, arrow };
         continue;
       }
       if (this.lex.ifText("++")) { node = { kind: "unary", pos, op: "postinc", arg: node }; continue; }
@@ -783,6 +802,24 @@ export class Parser {
   private pos(): SrcPos {
     return { file: this.lex.fileName, line: this.lex.line, column: this.lex.column };
   }
+}
+
+function fieldTypeSize(t: CType): number {
+  if (t.kind === "base") {
+    switch (t.base) {
+      case "char": case "schar": case "uchar": case "bool": return 1;
+      case "short": case "ushort": case "int": case "uint": return 2;
+      case "long": case "ulong": return 4;
+      case "llong": case "ullong": return 8;
+      case "float": return 4;
+      case "double": return 8;
+      case "void": return 0;
+    }
+  }
+  if (t.kind === "pointer") return 2;
+  if (t.kind === "array") return fieldTypeSize(t.of) * (t.length ?? 0);
+  if (t.kind === "struct") return t.size;
+  return 0;
 }
 
 function foldConstNode(n: CNode): bigint | null {

@@ -17,11 +17,17 @@ export type BaseType =
   | "float"
   | "double";
 
+export type StructField = {
+  readonly name: string;
+  readonly type: CType;
+  readonly offset: number;
+};
+
 export type CType =
   | { readonly kind: "base"; readonly base: BaseType }
   | { readonly kind: "pointer"; readonly to: CType }
   | { readonly kind: "array"; readonly of: CType; readonly length: number | null }
-  | { readonly kind: "struct"; readonly name: string }
+  | { readonly kind: "struct"; readonly name: string; readonly fields: readonly StructField[] | null; readonly size: number }
   | { readonly kind: "function"; readonly ret: CType; readonly params: readonly CType[] };
 
 export type CNode =
@@ -32,6 +38,7 @@ export type CNode =
   | { readonly kind: "unary"; readonly pos: SrcPos; readonly op: UnaryOp; readonly arg: CNode }
   | { readonly kind: "binary"; readonly pos: SrcPos; readonly op: BinaryOp; readonly lhs: CNode; readonly rhs: CNode }
   | { readonly kind: "call"; readonly pos: SrcPos; readonly target: CNode; readonly args: readonly CNode[] }
+  | { readonly kind: "member"; readonly pos: SrcPos; readonly object: CNode; readonly field: string; readonly arrow: boolean }
   | { readonly kind: "if"; readonly pos: SrcPos; readonly cond: CNode; readonly then: CNode; readonly else: CNode | null }
   | { readonly kind: "while"; readonly pos: SrcPos; readonly cond: CNode; readonly body: CNode }
   | { readonly kind: "do"; readonly pos: SrcPos; readonly body: CNode; readonly cond: CNode }

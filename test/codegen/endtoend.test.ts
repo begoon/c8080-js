@@ -303,6 +303,43 @@ describe("codegen — end-to-end", () => {
     `)).toBe(13);
   });
 
+  test("struct: global with two int fields, read/write", () => {
+    expect(run(`
+      struct Point { int x; int y; };
+      struct Point p;
+      int main(void) {
+        p.x = 100;
+        p.y = 200;
+        return p.x + p.y;
+      }
+    `)).toBe(300);
+  });
+
+  test("struct pointer: arrow access", () => {
+    expect(run(`
+      struct Box { int w; int h; };
+      struct Box global_box;
+      int area(struct Box *b) { return b->w * b->h; }
+      int main(void) {
+        global_box.w = 7;
+        global_box.h = 8;
+        return area(&global_box);
+      }
+    `)).toBe(56);
+  });
+
+  test("struct with mixed-size fields", () => {
+    expect(run(`
+      struct Rec { char tag; int value; };
+      struct Rec r;
+      int main(void) {
+        r.tag = 42;
+        r.value = 1234;
+        return r.tag + r.value;
+      }
+    `)).toBe(1276);
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

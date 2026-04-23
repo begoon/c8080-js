@@ -1,4 +1,4 @@
-import type { CFunction, CNode, CProgram, CType, CVariable, InitializerValue } from "../../frontend/ast.ts";
+import type { CFunction, CNode, CProgram, CType, CVariable, InitializerValue, StructField } from "../../frontend/ast.ts";
 
 export type CompileResult = {
   readonly asm: string;
@@ -210,6 +210,9 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
     case "call":
       compileCall(out, n, warnings);
       return;
+    case "member":
+      compileMemberRead(out, n, warnings);
+      return;
     case "assign": {
       if (n.target.kind === "var") {
         compileExpression(out, n.value, warnings);
@@ -221,6 +224,10 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
         } else {
           out.instruction("SHLD", addr);
         }
+        return;
+      }
+      if (n.target.kind === "member") {
+        compileMemberAssign(out, n.target, n.value, warnings);
         return;
       }
       if (n.target.kind === "unary" && n.target.op === "deref") {
@@ -420,6 +427,96 @@ function compileUnary(out: Emitter, op: string, arg: CNode, warnings: string[]):
       out.instruction("LXI", "H,0");
       return;
   }
+}
+
+function computeMemberAddress(out: Emitter, n: Extract<CNode, { kind: "member" }>, warnings: string[]): StructField | null {
+  // Leaves the member's address in HL. Returns the field definition (for size info) or null on error.
+  const field = resolveField(n);
+  if (!field) { warnings.push(`cannot resolve field '${n.field}'`); out.instruction("LXI", "H,0"); return null; }
+
+  if (n.arrow) {
+    // object is a pointer to struct; load the pointer value (HL).
+    compileExpression(out, n.object, warnings);
+  } else {
+    // object is a struct value; get its address via &object.
+    compileAddrOf(out, n.object, warnings);
+  }
+  if (field.offset > 0) {
+    out.instruction("LXI", `D,${field.offset}`);
+    out.instruction("DAD", "D");
+  }
+  return field;
+}
+
+function compileMemberRead(out: Emitter, n: Extract<CNode, { kind: "member" }>, warnings: string[]): void {
+  const field = computeMemberAddress(out, n, warnings);
+  if (!field) return;
+  if (isByteType(field.type)) {
+    out.instruction("MOV", "A,M"); out.instruction("MOV", "L,A"); out.instruction("MVI", "H,0");
+  } else {
+    out.instruction("MOV", "E,M"); out.instruction("INX", "H"); out.instruction("MOV", "D,M"); out.instruction("XCHG");
+  }
+}
+
+function compileMemberAssign(out: Emitter, target: Extract<CNode, { kind: "member" }>, value: CNode, warnings: string[]): void {
+  const field = resolveField(target);
+  if (!field) { warnings.push(`cannot resolve field '${target.field}'`); return; }
+  // Compute address, push, compute value, pop address, store.
+  if (target.arrow) compileExpression(out, target.object, warnings);
+  else compileAddrOf(out, target.object, warnings);
+  if (field.offset > 0) {
+    out.instruction("LXI", `D,${field.offset}`);
+    out.instruction("DAD", "D");
+  }
+  out.instruction("PUSH", "H");
+  compileExpression(out, value, warnings);
+  out.instruction("POP", "D");
+  out.instruction("XCHG"); // HL = addr, DE = value
+  if (isByteType(field.type)) {
+    out.instruction("MOV", "M,E");
+  } else {
+    out.instruction("MOV", "M,E"); out.instruction("INX", "H"); out.instruction("MOV", "M,D");
+  }
+}
+
+function resolveField(n: Extract<CNode, { kind: "member" }>): StructField | null {
+  const st = structTypeOf(n.object, n.arrow);
+  if (!st || !st.fields) return null;
+  return st.fields.find((f) => f.name === n.field) ?? null;
+}
+
+function structTypeOf(n: CNode, isArrowContext: boolean): Extract<CType, { kind: "struct" }> | null {
+  // For a.x: n should have struct type directly.
+  // For a->x: n should have pointer-to-struct type.
+  if (n.kind === "var" && n.resolved) {
+    const t = n.resolved.type;
+    if (isArrowContext) {
+      if (t.kind === "pointer" && t.to.kind === "struct") return t.to;
+    } else {
+      if (t.kind === "struct") return t;
+    }
+  }
+  if (n.kind === "unary" && n.op === "deref") {
+    // *p where p is pointer-to-struct
+    const inner = n.arg;
+    if (inner.kind === "var" && inner.resolved && inner.resolved.type.kind === "pointer" && inner.resolved.type.to.kind === "struct") {
+      return inner.resolved.type.to;
+    }
+  }
+  return null;
+}
+
+function compileAddrOf(out: Emitter, n: CNode, warnings: string[]): void {
+  if (n.kind === "var") {
+    const addr = variableAddress(out, n.name, n.resolved);
+    if (addr) { out.instruction("LXI", `H,${addr}`); return; }
+  }
+  if (n.kind === "unary" && n.op === "deref") {
+    compileExpression(out, n.arg, warnings); // the deref's arg already IS the address
+    return;
+  }
+  warnings.push(`cannot take address of ${n.kind}`);
+  out.instruction("LXI", "H,0");
 }
 
 function compileDeref(out: Emitter, arg: CNode, warnings: string[]): void {
