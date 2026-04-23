@@ -2976,7 +2976,7 @@ function compileNode(out, n, warnings) {
       out.instruction("RET");
       return;
     case "asm":
-      out.raw(n.text);
+      out.raw(indentAsmBlock(n.text));
       return;
     case "assign":
       compileExpression(out, n, warnings);
@@ -3090,6 +3090,18 @@ function compileNode(out, n, warnings) {
       warnings.push(`unhandled statement kind '${n.kind}'`);
       return;
   }
+}
+function indentAsmBlock(text) {
+  return text.split(`
+`).map((line) => {
+    const trimmed = line.trimStart();
+    if (trimmed === "")
+      return "";
+    if (/^[A-Za-z_.][A-Za-z_.0-9]*:\s*$/.test(trimmed))
+      return trimmed;
+    return "    " + trimmed;
+  }).join(`
+`);
 }
 function isExpressionKind(k) {
   return k === "const" || k === "var" || k === "binary" || k === "unary" || k === "call" || k === "load" || k === "assign" || k === "member" || k === "ternary";

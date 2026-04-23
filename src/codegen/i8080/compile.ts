@@ -74,7 +74,7 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
       out.instruction("RET");
       return;
     case "asm":
-      out.raw(n.text);
+      out.raw(indentAsmBlock(n.text));
       return;
     case "assign":
       compileExpression(out, n, warnings);
@@ -179,6 +179,22 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
       warnings.push(`unhandled statement kind '${n.kind}'`);
       return;
   }
+}
+
+function indentAsmBlock(text: string): string {
+  // Inline-asm bodies come through verbatim — prepend 4 spaces to each
+  // non-blank line so they align with the rest of the emitted asm.
+  // Labels (bareword ending in `:`) stay flush-left to match the codegen's
+  // own label placement.
+  return text
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trimStart();
+      if (trimmed === "") return "";
+      if (/^[A-Za-z_.][A-Za-z_.0-9]*:\s*$/.test(trimmed)) return trimmed;
+      return "    " + trimmed;
+    })
+    .join("\n");
 }
 
 function isExpressionKind(k: CNode["kind"]): boolean {
