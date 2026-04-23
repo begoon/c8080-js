@@ -218,6 +218,11 @@ export class Parser {
         structType = this.parseStructRef();
         continue;
       }
+      if (t === "enum") {
+        this.parseEnumSpec();
+        baseParts.push("int"); // enum is int
+        continue;
+      }
       if (baseParts.length === 0 && typedefType === null && this.symbols.hasTypedef(t)) {
         typedefType = this.symbols.lookupTypedef(t)!;
         this.lex.advance();
@@ -247,6 +252,28 @@ export class Parser {
         continue;
       }
       break;
+    }
+  }
+
+  private parseEnumSpec(): void {
+    this.lex.advance(); // 'enum'
+    // Optional tag name.
+    if (this.lex.kind === "ident" && !this.lex.peekText("{")) this.lex.advance();
+    if (!this.lex.ifText("{")) return;
+    let next = 0n;
+    while (!this.lex.ifText("}")) {
+      if (this.lex.atEnd()) this.lex.throwHere("unterminated enum");
+      const name = this.lex.needIdent();
+      let value = next;
+      if (this.lex.ifText("=")) {
+        const expr = this.parseAssign();
+        const folded = foldConstNode(expr);
+        if (folded === null) this.lex.throwHere(`enum value for '${name}' is not a constant`);
+        value = folded;
+      }
+      this.symbols.defineEnumConstant(name, value);
+      next = value + 1n;
+      if (!this.lex.ifText(",")) { this.lex.needText("}"); break; }
     }
   }
 
@@ -741,6 +768,10 @@ export class Parser {
     if (this.lex.kind === "ident") {
       const name = this.lex.text;
       this.lex.advance();
+      const enumValue = this.symbols.lookupEnumConstant(name);
+      if (enumValue !== null) {
+        return { kind: "const", pos, type: { kind: "base", base: "int" }, value: enumValue };
+      }
       const resolved = this.symbols.lookupVariable(name);
       return { kind: "var", pos, name, resolved };
     }
@@ -752,6 +783,39 @@ export class Parser {
   private pos(): SrcPos {
     return { file: this.lex.fileName, line: this.lex.line, column: this.lex.column };
   }
+}
+
+function foldConstNode(n: CNode): bigint | null {
+  if (n.kind === "const") return typeof n.value === "bigint" ? n.value : null;
+  if (n.kind === "unary") {
+    const v = foldConstNode(n.arg);
+    if (v === null) return null;
+    switch (n.op) {
+      case "neg": return -v;
+      case "not": return v === 0n ? 1n : 0n;
+      case "bnot": return ~v;
+      default: return null;
+    }
+  }
+  if (n.kind === "binary") {
+    const l = foldConstNode(n.lhs);
+    const r = foldConstNode(n.rhs);
+    if (l === null || r === null) return null;
+    switch (n.op) {
+      case "add": return l + r;
+      case "sub": return l - r;
+      case "mul": return l * r;
+      case "div": return r === 0n ? null : l / r;
+      case "mod": return r === 0n ? null : l % r;
+      case "shl": return l << r;
+      case "shr": return l >> r;
+      case "and": return l & r;
+      case "or":  return l | r;
+      case "xor": return l ^ r;
+      default: return null;
+    }
+  }
+  return null;
 }
 
 const COMPOUND_ASSIGN: Array<[string, BinaryOp]> = [

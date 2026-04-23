@@ -13,6 +13,15 @@ function emptyScope(): Scope {
 export class SymbolTable {
   private readonly stack: Scope[] = [emptyScope()];
   readonly functions = new Map<string, CFunction>();
+  private readonly enumConstants = new Map<string, bigint>();
+
+  defineEnumConstant(name: string, value: bigint): void {
+    this.enumConstants.set(name, value);
+  }
+
+  lookupEnumConstant(name: string): bigint | null {
+    return this.enumConstants.get(name) ?? null;
+  }
 
   pushScope(): void { this.stack.push(emptyScope()); }
   popScope(): void { if (this.stack.length > 1) this.stack.pop(); }

@@ -278,6 +278,31 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("olleh");
   });
 
+  test("enum values resolve as integer constants", () => {
+    expect(run(`
+      enum Color { RED, GREEN, BLUE };
+      int main(void) { return RED + GREEN + BLUE; }
+    `)).toBe(3); // 0 + 1 + 2
+  });
+
+  test("enum with explicit values", () => {
+    expect(run(`
+      enum { A = 100, B, C = 200, D };
+      int main(void) { return A + B + C + D; }
+    `)).toBe(602); // 100 + 101 + 200 + 201
+  });
+
+  test("enum used as return/argument type", () => {
+    expect(run(`
+      enum Op { ADD, SUB };
+      int apply(enum Op op, int a, int b) {
+        if (op == ADD) return a + b;
+        return a - b;
+      }
+      int main(void) { return apply(ADD, 10, 3); }
+    `)).toBe(13);
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —
