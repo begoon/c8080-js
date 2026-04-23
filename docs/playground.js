@@ -5549,10 +5549,8 @@ function saveTheme(t) {
     localStorage.setItem(THEME_KEY, t);
   } catch {}
 }
-function applyTheme(t, btn) {
+function applyTheme(t) {
   document.body.classList.toggle("theme-light", t === "light");
-  if (btn)
-    btn.textContent = t === "light" ? "dark" : "light";
 }
 function debounce(fn, ms) {
   let handle = null;
@@ -5643,10 +5641,10 @@ async function init() {
     if (e.key === "Enter")
       closeConfirm(true);
   });
-  applyTheme(loadTheme(), themeBtn);
+  applyTheme(loadTheme());
   themeBtn.addEventListener("click", () => {
     const next = document.body.classList.contains("theme-light") ? "dark" : "light";
-    applyTheme(next, themeBtn);
+    applyTheme(next);
     saveTheme(next);
   });
   resetBtn.addEventListener("click", async () => {

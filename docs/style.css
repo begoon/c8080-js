@@ -151,6 +151,22 @@ button.primary:disabled {
   border-radius: 4px;
 }
 
+.icon-btn {
+  padding: 0.3rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.icon-btn .icon { display: block; }
+
+/* Dark theme → show the sun (you can switch TO light);
+   Light theme → show the moon (you can switch TO dark). */
+.icon-btn .icon-moon { display: none; }
+body.theme-light .icon-btn .icon-sun { display: none; }
+body.theme-light .icon-btn .icon-moon { display: block; }
+
 button.danger {
   background: var(--danger-bg);
   color: var(--danger-fg);

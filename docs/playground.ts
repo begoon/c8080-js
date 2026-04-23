@@ -119,9 +119,8 @@ function loadTheme(): Theme {
 function saveTheme(t: Theme): void {
   try { localStorage.setItem(THEME_KEY, t); } catch {}
 }
-function applyTheme(t: Theme, btn: HTMLButtonElement | null): void {
+function applyTheme(t: Theme): void {
   document.body.classList.toggle("theme-light", t === "light");
-  if (btn) btn.textContent = t === "light" ? "dark" : "light";
 }
 
 function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): (...args: Parameters<T>) => void {
@@ -215,10 +214,10 @@ async function init(): Promise<void> {
     if (e.key === "Enter") closeConfirm(true);
   });
 
-  applyTheme(loadTheme(), themeBtn);
+  applyTheme(loadTheme());
   themeBtn.addEventListener("click", () => {
     const next: Theme = document.body.classList.contains("theme-light") ? "dark" : "light";
-    applyTheme(next, themeBtn);
+    applyTheme(next);
     saveTheme(next);
   });
 
