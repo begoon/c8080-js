@@ -6,100 +6,94 @@ compiler for i8080 / КР580ВМ80А platforms).
 
 ## Status
 
-End-to-end pipeline: **C source → preprocess → parse → codegen → asm →
-[asm8080](https://www.npmjs.com/package/asm8080) → binary**. Compiled
-programs actually run on an in-process 8080 simulator, which intercepts
-CP/M BDOS calls at `0x0005` for I/O.
+End-to-end pipeline: **C source → preprocess → parse → demand-link
+(`__link`) → codegen → asm → [asm8080](https://www.npmjs.com/package/asm8080)
+→ binary**. Compiled programs actually run on an in-process 8080 simulator
+that intercepts CP/M BDOS calls at `0x0005` for I/O.
 
 ```bash
 bun install
-bun test           # 113 tests, including 20 end-to-end (compile + simulate)
+bun test           # 131 unit + 37 end-to-end tests (compile + simulate)
 bun run typecheck  # tsc --noEmit
 bun bin/c8080.ts [-V] [-Ocpm|-Orks] [-I<dir>] [-D<name>] [-o<bin>] file.c
 ```
 
+### Real-c8080-stdlib demo
+
+```c
+#include <stdio.h>
+int main(void) { puts("Hello from real c8080 stdlib!"); return 0; }
+```
+
+```bash
+$ bun bin/c8080.ts -I/path/to/c8080/include demo.c
+Done
+```
+
+The compiler follows `__link("stdio_h/puts.c")` from `stdio.h`, parses it,
+and merges its `puts` definition into the program. Demand-linking means
+`printf` etc. are only pulled in if actually called.
+
 ### What compiles today
 
-Programs using these features produce correct bytecode:
+| Feature | Notes |
+|---|---|
+| Types | char, short, int, long, long long, signed/unsigned, pointers, arrays, struct, enum, typedef |
+| Statements | blocks, if/else, while, do-while, for, break, continue, return, goto, switch/case/default, `asm { … }` with preserved line structure |
+| Expressions | full C precedence ladder, assignment + compound (`+=` etc.), ternary, unary `-!~*&++--` (pre+post), `[] . ->`, casts, sizeof, comma operator, string + char literals |
+| Arithmetic | `+ - * / % << >> & \| ^` (mul/div/shifts via shipped runtime helpers; pointer arithmetic scales by element size) |
+| Comparisons | signed 16-bit `== != < <= > >=` |
+| Control flow | conditional jumps with fresh-labels; switch is a linear compare-and-branch dispatcher |
+| Structs | named fields with byte-offset layout; `.` and `->` member read/write for both byte and word fields |
+| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary |
+| Preprocessor (full) | `#include` (both forms), `#define` (object- and function-like macros, variadic `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with C integer-expression evaluator + `defined(X)` + `__has_include(...)`, `#pragma once`, `#error`, CLI `-D` |
+| `__link("file.c")` | demand-linked: only files whose functions are reachable from the call graph are parsed. Parse failures of unreachable links are non-fatal |
+| Global initializers | scalars, strings (as DB), array list-initializers (as DW with padding) |
+| Runtime helpers | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — emitted only when referenced |
 
-- **Types**: `char`, `unsigned char`, `int`, `unsigned`, `short`, `long`
-  (parsed; codegen treats all integers as 16-bit), pointers, arrays,
-  `typedef`
-- **Statements**: blocks, `if/else`, `while`, `do…while`, `for`, `break`,
-  `continue`, `return`, `goto`, `switch/case/default`, inline `asm { … }`
-- **Expressions**: full C precedence ladder, assignment + compound
-  (`+=`, `-=`, `*=`, etc.), ternary `?:`, unary `-!~*&++--` (pre and post),
-  `[] . ->`, function calls, casts, string + char literals
-- **Arithmetic**: `+ - * / % << >> & | ^`. Multiply/divide/shifts go
-  through shipped runtime helpers (`__o_mul_u16`, `__o_div_u16`,
-  `__o_shl_u16`, `__o_shr_u16`). Element-size scaling is done for
-  pointer arithmetic so `int arr[N]; arr[i]` reads the correct slot.
-- **I/O**: built-in `putchar` and `puts` that call BDOS function 2;
-  user-defined versions win. String literals interned into the binary
-  as `DB`-encoded NUL-terminated bytes.
-- **Preprocessor** (full): `#include` (both forms), `#define` with
-  object-like and function-like macros (variadic `...` supported),
-  `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with full C
-  integer-expression evaluator including `defined(X)` and
-  `__has_include(...)`, `#pragma once`, `#error`, CLI `-D`.
+### End-to-end tests (all run on the simulator)
 
-### Examples that work
-
-```c
-int main(void) { return 42; }
+```
+return 42, add(3,4)=7, sum 1..10 via while=55, sum 1..5 via for=15,
+abs(-17)=17, mul(7,13)=91, 12*12=144, 3+4*5=23, 100/7=14, 100%7=2,
+1<<10=1024, print "123" via /,%, putchar 'A', puts "hello", loop '***',
+strlen_("hello!")=6, byte array r/w, int array[5] r/w, string reversal
+"hello"→"olleh", char array init with string literal, int array list init,
+enum constants RED+GREEN+BLUE=3, explicit enum values, enum as param,
+struct Point.x+.y, struct Box*->w*->h, struct with mixed field sizes,
+++i + ++i, i++ post-inc, while (--i >= 0), *s++ string walk,
+switch dispatches correct case, switch default,
+iterative fib(10)=55, global scalar init, int[] init, char[] init,
+single char init, lookup table digits[7]
 ```
 
-```c
-int add(int a, int b) { return a + b; }
-int main(void) { return add(3, 4); }       // returns 7
-```
+### Known gaps
 
-```c
-int main(void) {
-  int total = 0, i = 1;
-  while (i <= 10) { total = total + i; i = i + 1; }
-  return total;                             // returns 55
-}
-```
-
-```c
-char buf[16];
-void reverse(char *s, int len) {
-  int i = 0, j = len - 1;
-  while (i < j) {
-    char t; t = s[i]; s[i] = s[j]; s[j] = t;
-    i = i + 1; j = j - 1;
-  }
-}
-int main(void) {
-  buf[0]='h'; buf[1]='e'; buf[2]='l'; buf[3]='l'; buf[4]='o'; buf[5]=0;
-  reverse(buf, 5);
-  puts(buf);                                // prints "olleh"
-  return 0;
-}
-```
-
-### What doesn't work yet
-
-- **Struct fields** — parser captures `struct S` as an opaque type name,
-  but `.x` / `->x` fall through as placeholder calls; no member layout.
-- **Enums** — not parsed.
-- **Global initializers** — globals get `DS <size>` with no
-  compile-time-populated data (`int x = 5;` allocates 2 bytes of zero).
 - **`__stack` mode / recursion** — c8080's default `__global` convention
   uses fixed param addresses, so recursive calls corrupt the frame
   (documented in `manual.md` §5). Iterative patterns work fine.
-- **8-bit register path** — even `char` ops go through 16-bit HL; tighter
-  8-bit codegen via A is a future optimization.
+- **8-bit register path** — even `char` ops go through 16-bit HL where
+  a tighter A-register path would save instructions.
 - **Signed arithmetic edge cases** — comparisons use sign of SBB result,
   which ignores signed-overflow cases at the edges of int16 range.
   Multiply/divide/shift runtime helpers are unsigned.
-- **CP/M runtime integration** — the c8080 `include/c8080/internal.c`
-  (bss zeroing, stack init) is not wired in. Our programs work under CP/M
-  because they never touch bss and CP/M sets up SP for us.
-- **`__address(N)` / `__link("file.c")`** attributes — parsed and
-  discarded.
-- **`#pragma codepage`** — parsed and discarded.
+- **CP/M runtime integration** — `__init`/bss zeroing from c8080's
+  `include/c8080/internal.c` is not wired in. Our programs work because
+  CP/M sets up SP and we don't rely on bss being zero.
+- **c8080 stdlib with inline sjasmplus asm** — most of the
+  `include/string_h/*.c` files are hand-written sjasmplus assembly inside
+  `asm { }` blocks. sjasmplus and asm8080 disagree on syntax (e.g.
+  `label = value` vs `label: EQU value`), so those don't assemble. Pure
+  C stdlib sources (`puts.c`, etc.) work fine.
+- **Member access on arbitrary lvalues** — currently handles `var.x`,
+  `var->x`, and `(*ptr).x`; more complex expressions (e.g. `a[i].x`)
+  fall through as a warning.
+- **Struct value copy / pass-by-value** — assignment between struct
+  values not supported; pass by pointer.
+- **Ternary in expression position** — parsed as an `if` AST node; the
+  codegen path for that as an expression is incomplete.
+- **Short-circuit `&&` / `||` codegen** — currently emits a simplified
+  (non-short-circuiting) implementation.
 
 ### Project layout
 
@@ -107,40 +101,27 @@ int main(void) {
 src/
   frontend/
     tokenizer.ts      port of ctokenizer.cpp
-    preprocessor.ts   #include / #define / #if machinery
-    fs.ts             filesystem abstraction (Node + in-memory)
-    lex.ts            token-stream wrapper with arbitrary lookahead
-    ast.ts            CNode / CType / CVariable discriminated unions
-    parser.ts         recursive-descent C parser
-    symbols.ts        scoped symbol table (vars, typedefs, struct tags)
+    preprocessor.ts   #include / #define / #if
+    fs.ts             Node + in-memory FS
+    lex.ts            token-stream with arbitrary lookahead
+    ast.ts            CNode / CType / CVariable union
+    parser.ts         recursive-descent C parser + __link capture
+    symbols.ts        scoped symbol table (vars, typedefs, struct tags, enums)
   codegen/
-    i8080/compile.ts  walks AST → Intel-syntax 8080 assembly
-  formats/rks.ts      RK86/Specialist tape envelope (byte-exact match
-                      with c8080's output on three reference .rks files)
+    i8080/compile.ts  AST → Intel-syntax 8080 assembly
+  formats/rks.ts      RK86/Specialist tape envelope
   util/dump.ts        human-readable AST dump (used by -V)
-bin/c8080.ts          CLI: preprocess → parse → (-V dump | codegen →
-                      asm8080 → .bin or -Orks wrap)
+bin/c8080.ts          CLI: preprocess + parse + __link walk + codegen + asm8080
 test/
-  frontend/ codegen/ formats/ util/    unit tests
-  codegen/sim8080.ts                   minimal 8080 simulator for e2e
-  codegen/endtoend.test.ts             20 C programs: compile and run
+  codegen/sim8080.ts  minimal 8080 simulator + BDOS hooks
+  codegen/endtoend.test.ts   37 C programs: compile + run + assert output
 ```
 
 ### Build verification
 
-`bun test` preprocesses and parses **37 of 41** real c8080 source files
-from the reference compiler's tree (including `game2048.c`, `color_lines`,
-`kosoban`, `micro80.c`, `nc.c`). The 4 that don't parse are all
-context-dependent (missing arch-specific headers or needing `__CMM`
-flag) — not parser bugs.
-
-### Why this exists
-
-A TypeScript rewrite of a C++ compiler for a 45-year-old 8-bit CPU.
-The goal is parity with the reference compiler, not a new design. Where
-c8080 has quirks (raw-text macro argument substitution, no-recursion in
-`__global` mode, no-space-before-paren for function-like macros), we
-reproduce them faithfully.
+The preprocessor handles 37 of 41 real c8080 sources (the 4 failures are
+all context-dependent — missing arch-specific headers or needing `__CMM`
+flag — not parser bugs). The parser reaches all of these too.
 
 ### License
 
