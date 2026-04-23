@@ -159,12 +159,17 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
     case "switch":
       compileSwitch(out, n, warnings);
       return;
+    case "label":
+      out.label(`.Lu_${n.name}`);
+      return;
+    case "goto":
+      out.instruction("JMP", `.Lu_${n.label}`);
+      return;
     case "case":
     case "default":
-    case "label":
-    case "goto":
-      // Handled in compileSwitch / not-yet for top-level goto-label flow.
-      warnings.push(`${n.kind} outside of a switch is not supported yet`);
+      // Handled inside compileSwitch's body walk; bare cases outside of
+      // a switch are a C error.
+      warnings.push(`${n.kind} outside of a switch`);
       return;
     default:
       if (isExpressionKind(n.kind)) { compileExpression(out, n, warnings); return; }

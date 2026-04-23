@@ -437,6 +437,79 @@ describe("codegen — end-to-end", () => {
     expect(run(`int main(void) { return (5 || 3) + (0 || 3) + (0 || 0); }`)).toBe(2);
   });
 
+  test("goto forward jump", () => {
+    expect(run(`
+      int main(void) {
+        int x = 1;
+        goto skip;
+        x = 99;
+        skip:
+        return x;
+      }
+    `)).toBe(1);
+  });
+
+  test("goto backward jump (loop)", () => {
+    expect(run(`
+      int main(void) {
+        int i = 0;
+        int sum = 0;
+        top:
+        if (i >= 5) goto done;
+        sum = sum + i;
+        i = i + 1;
+        goto top;
+        done:
+        return sum;
+      }
+    `)).toBe(10); // 0+1+2+3+4
+  });
+
+  test("compound assign to struct member", () => {
+    expect(run(`
+      struct Counter { int n; };
+      struct Counter c;
+      int main(void) {
+        c.n = 10;
+        c.n += 5;
+        c.n -= 2;
+        return c.n;
+      }
+    `)).toBe(13);
+  });
+
+  test("primes up to 30 via multiply/divide and i/o", () => {
+    const r = runWithOutput(`
+      void putint(int n) {
+        int h = n / 100;
+        int t = (n / 10) % 10;
+        int o = n % 10;
+        if (h > 0) { putchar('0' + h); putchar('0' + t); putchar('0' + o); return; }
+        if (t > 0) { putchar('0' + t); putchar('0' + o); return; }
+        putchar('0' + o);
+      }
+      int is_prime(int n) {
+        if (n < 2) return 0;
+        int d;
+        for (d = 2; d * d <= n; d = d + 1) {
+          if (n / d * d == n) return 0;
+        }
+        return 1;
+      }
+      int main(void) {
+        int n;
+        for (n = 2; n <= 30; n = n + 1) {
+          if (is_prime(n)) {
+            putint(n);
+            putchar(' ');
+          }
+        }
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("2 3 5 7 11 13 17 19 23 29 ");
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —
