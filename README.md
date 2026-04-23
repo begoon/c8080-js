@@ -1,5 +1,18 @@
 # c8080
 
+> **Credits.** The original c8080 compiler — its design, its C-dialect
+> extensions (`__global`, `__stack`, `__link`, `__address`, the
+> `__a_N_<func>` calling convention), the CMM sublanguage, the RK86
+> tape formats, and the vendored Russian-language
+> [`MANUAL.md`](MANUAL.md) — are © Алексей Фёдорович Морозов
+> (Aleksey F. Morozov), distributed under **GPL-3.0** (compiler) and
+> **Apache-2.0** (standard library). Upstream:
+> <https://github.com/alexey-f-morozov/c8080>.
+>
+> This repository is an independent TypeScript port of that compiler.
+> It reproduces the language and ABI; all behaviour-defining decisions
+> come from the upstream design. The port inherits **GPL-3.0**.
+
 Intel 8080 C compiler in TypeScript. Port of
 [c8080](https://github.com/alexey-f-morozov/c8080) (Aleksey Morozov's C++
 compiler for i8080 / КР580ВМ80А platforms). Runs on Node 18+ and Bun.
