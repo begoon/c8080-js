@@ -623,7 +623,7 @@ describe("codegen — end-to-end", () => {
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —
-    // documented constraint in manual.md §5).
+    // documented constraint in MANUAL.md §5).
     expect(run(`
       int fib(int n) {
         int a = 0;

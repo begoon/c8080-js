@@ -4,6 +4,11 @@ Intel 8080 C compiler in TypeScript. Port of
 [c8080](https://github.com/alexey-f-morozov/c8080) (Aleksey Morozov's C++
 compiler for i8080 / КР580ВМ80А platforms). Runs on Node 18+ and Bun.
 
+Upstream reference manual (Russian) is checked in as
+[`MANUAL.md`](MANUAL.md) — §5 covers the `__global` / `__stack`
+convention, §11 the output-file formats (`rks`, `rk`, `rkr`, `pki`,
+`gam`), §14 the RK86 tape layout our wrappers produce.
+
 ## Install
 
 ```bash
