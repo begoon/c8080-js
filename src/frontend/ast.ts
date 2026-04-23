@@ -26,7 +26,7 @@ export type CType =
 
 export type CNode =
   | { readonly kind: "const"; readonly pos: SrcPos; readonly type: CType; readonly value: bigint | string }
-  | { readonly kind: "var"; readonly pos: SrcPos; readonly name: string }
+  | { readonly kind: "var"; readonly pos: SrcPos; readonly name: string; readonly resolved: CVariable | null }
   | { readonly kind: "load"; readonly pos: SrcPos; readonly target: CNode }
   | { readonly kind: "assign"; readonly pos: SrcPos; readonly target: CNode; readonly value: CNode }
   | { readonly kind: "unary"; readonly pos: SrcPos; readonly op: UnaryOp; readonly arg: CNode }

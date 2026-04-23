@@ -9,6 +9,7 @@ import type {
   UnaryOp,
 } from "./ast.ts";
 import { Lex } from "./lex.ts";
+import { SymbolTable } from "./symbols.ts";
 
 const BASE_TYPE_KEYWORDS = new Set([
   "void", "char", "short", "int", "long", "signed", "unsigned", "_Bool", "float", "double",
@@ -24,7 +25,8 @@ type TypeSpec = {
 };
 
 export class Parser {
-  private readonly typedefs = new Map<string, CType>();
+  readonly symbols = new SymbolTable();
+  private currentFunctionLocals: CVariable[] = [];
 
   constructor(private readonly lex: Lex) {}
 
@@ -62,11 +64,13 @@ export class Parser {
     const firstType = this.wrapArrayBounds(this.wrapPointers(ts.base, starCount));
     this.skipTrailingAttributes();
     if (this.lex.ifText("=")) this.parseInitializer();
-    globals.push({
+    const firstVar: CVariable = {
       name, type: firstType, pos,
       storage: ts.storage === "auto" ? "global" : ts.storage,
       address: null, linkFile: null,
-    });
+    };
+    globals.push(firstVar);
+    this.symbols.declareVariable(firstVar);
 
     while (this.lex.ifText(",")) {
       const morePos = this.pos();
@@ -75,11 +79,13 @@ export class Parser {
       const moreType = this.wrapArrayBounds(this.wrapPointers(ts.base, moreStars));
       this.skipTrailingAttributes();
       if (this.lex.ifText("=")) this.parseInitializer();
-      globals.push({
+      const moreVar: CVariable = {
         name: moreName, type: moreType, pos: morePos,
         storage: ts.storage === "auto" ? "global" : ts.storage,
         address: null, linkFile: null,
-      });
+      };
+      globals.push(moreVar);
+      this.symbols.declareVariable(moreVar);
     }
     this.lex.needText(";");
   }
@@ -102,7 +108,7 @@ export class Parser {
     const stars = this.parsePointers();
     const name = this.lex.needIdent();
     this.lex.needText(";");
-    this.typedefs.set(name, this.wrapPointers(ts.base, stars));
+    this.symbols.declareTypedef(name, this.wrapPointers(ts.base, stars));
   }
 
   private parseFunction(
@@ -111,24 +117,39 @@ export class Parser {
     const retType = this.wrapPointers(ts.base, retStars);
     const params = this.parseParamList();
     this.skipTrailingAttributes();
-    let body: CNode | null = null;
-    if (this.lex.ifText(";")) {
-      // forward declaration — swallow
-    } else {
-      this.lex.needText("{");
-      body = this.parseBlock(pos);
-    }
     const funcType: CType = {
       kind: "function",
       ret: retType,
       params: params.map((p) => p.type),
     };
-    functions.push({
+    const func: CFunction = {
       name, type: funcType, params,
-      locals: [], body,
+      locals: [], body: null,
       storage: ts.storage === "stack" ? "stack" : "global",
       pos,
-    });
+    };
+
+    if (this.lex.ifText(";")) {
+      this.symbols.declareFunction(func);
+      functions.push(func);
+      return;
+    }
+    this.lex.needText("{");
+
+    // Declare the function first so it can be called recursively.
+    this.symbols.declareFunction(func);
+
+    this.symbols.pushScope();
+    this.currentFunctionLocals = [];
+    for (const p of params) if (p.name) this.symbols.declareVariable(p);
+    const body = this.parseBlock(pos);
+    const locals = this.currentFunctionLocals;
+    this.currentFunctionLocals = [];
+    this.symbols.popScope();
+
+    const finished: CFunction = { ...func, body, locals };
+    functions.push(finished);
+    this.symbols.declareFunction(finished); // replace with the version that has body+locals
   }
 
   private parseParamList(): CVariable[] {
@@ -194,8 +215,8 @@ export class Parser {
         structType = this.parseStructRef();
         continue;
       }
-      if (baseParts.length === 0 && typedefType === null && this.typedefs.has(t)) {
-        typedefType = this.typedefs.get(t)!;
+      if (baseParts.length === 0 && typedefType === null && this.symbols.hasTypedef(t)) {
+        typedefType = this.symbols.lookupTypedef(t)!;
         this.lex.advance();
         continue;
       }
@@ -287,10 +308,12 @@ export class Parser {
 
   private parseBlock(pos: SrcPos): CNode {
     const stmts: CNode[] = [];
+    this.symbols.pushScope();
     while (!this.lex.ifText("}")) {
       if (this.lex.atEnd()) this.lex.throwHere("unexpected end of file, expected '}'");
       stmts.push(this.parseStatement());
     }
+    this.symbols.popScope();
     return { kind: "block", pos, stmts };
   }
 
@@ -344,7 +367,7 @@ export class Parser {
     if (STORAGE_KEYWORDS.has(t)) return true;
     if (TYPE_QUAL_KEYWORDS.has(t)) return true;
     if (t === "struct" || t === "union" || t === "enum" || t === "typedef") return true;
-    if (this.typedefs.has(t)) return true;
+    if (this.symbols.hasTypedef(t)) return true;
     return false;
   }
 
@@ -357,18 +380,20 @@ export class Parser {
       const declPos = this.pos();
       const stars = this.parsePointers();
       const name = this.lex.needIdent();
-      // Optional array brackets.
-      while (this.lex.ifText("[")) {
-        while (!this.lex.ifText("]")) {
-          if (this.lex.atEnd()) this.lex.throwHere("unterminated array bounds");
-          this.lex.advance();
-        }
-      }
+      const baseWithPtr = this.wrapPointers(ts.base, stars);
+      const type = this.wrapArrayBounds(baseWithPtr);
+      const local: CVariable = {
+        name, type, pos: declPos,
+        storage: ts.storage === "auto" ? "auto" : ts.storage,
+        address: null, linkFile: null,
+      };
+      this.symbols.declareVariable(local);
+      this.currentFunctionLocals.push(local);
       let value: CNode | null = null;
       if (this.lex.ifText("=")) value = this.parseInitializer();
-      void stars;
       if (value !== null) {
-        stmts.push({ kind: "assign", pos: declPos, target: { kind: "var", pos: declPos, name }, value });
+        const target: CNode = { kind: "var", pos: declPos, name, resolved: local };
+        stmts.push({ kind: "assign", pos: declPos, target, value });
       }
       if (!this.lex.ifText(",")) break;
     }
@@ -634,7 +659,7 @@ export class Parser {
     if (BASE_TYPE_KEYWORDS.has(name)) return true;
     if (TYPE_QUAL_KEYWORDS.has(name)) return true;
     if (name === "struct" || name === "union" || name === "enum") return true;
-    if (this.typedefs.has(name)) return true;
+    if (this.symbols.hasTypedef(name)) return true;
     return false;
   }
 
@@ -666,9 +691,7 @@ export class Parser {
         const isArrow = this.lex.peekText("->");
         if (isArrow) this.lex.advance();
         const field = this.lex.needIdent();
-        // MVP: treat member access as a synthetic call to a named-field accessor.
-        // Full struct resolution comes with the symbol table.
-        node = { kind: "call", pos, target: { kind: "var", pos, name: `@${isArrow ? "->" : "."}${field}` }, args: [node] };
+        node = { kind: "call", pos, target: { kind: "var", pos, name: `@${isArrow ? "->" : "."}${field}`, resolved: null }, args: [node] };
         continue;
       }
       if (this.lex.ifText("++")) { node = { kind: "unary", pos, op: "postinc", arg: node }; continue; }
@@ -708,7 +731,8 @@ export class Parser {
     if (this.lex.kind === "ident") {
       const name = this.lex.text;
       this.lex.advance();
-      return { kind: "var", pos, name };
+      const resolved = this.symbols.lookupVariable(name);
+      return { kind: "var", pos, name, resolved };
     }
     this.lex.throwUnexpected("expected expression");
   }
