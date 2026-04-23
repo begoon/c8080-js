@@ -1,62 +1,68 @@
 # c8080
 
-> **Credits.** The original c8080 compiler — its design, its C-dialect
-> extensions (`__global`, `__stack`, `__link`, `__address`, the
-> `__a_N_<func>` calling convention), the CMM sublanguage, the RK86
-> tape formats, and the vendored Russian-language
-> [`MANUAL.md`](MANUAL.md) — are © Алексей Фёдорович Морозов
-> (Aleksey F. Morozov), distributed under **GPL-3.0** (compiler) and
-> **Apache-2.0** (standard library). Upstream:
+> **Авторство.** Оригинальный компилятор c8080 — его архитектура,
+> расширения языка C (`__global`, `__stack`, `__link`, `__address`,
+> соглашение о вызовах `__a_N_<func>`), подъязык CMM, форматы
+> магнитофонных файлов RK86 и входящий в проект справочник
+> [`MANUAL.md`](MANUAL.md) — © Алексей Фёдорович Морозов
+> (Aleksey F. Morozov). Лицензии: **GPL-3.0** на компилятор и
+> **Apache-2.0** на стандартную библиотеку. Источник:
 > <https://github.com/alexey-f-morozov/c8080>.
 >
-> This repository is an independent TypeScript port of that compiler.
-> It reproduces the language and ABI; all behaviour-defining decisions
-> come from the upstream design. The port inherits **GPL-3.0**.
+> Этот репозиторий — независимый порт компилятора на TypeScript.
+> Он воспроизводит язык и ABI; все решения, определяющие поведение,
+> приходят из оригинального проекта. Порт наследует **GPL-3.0**.
 
-Intel 8080 C compiler in TypeScript. Port of
-[c8080](https://github.com/alexey-f-morozov/c8080) (Aleksey Morozov's C++
-compiler for i8080 / КР580ВМ80А platforms). Runs on Node 18+ and Bun.
+Компилятор C для Intel 8080 на TypeScript. Порт
+[c8080](https://github.com/alexey-f-morozov/c8080) — компилятора
+Алексея Морозова на C++ для платформ на базе i8080 / КР580ВМ80А.
+Работает на Node 18+ и Bun.
 
-Upstream reference manual (Russian) is checked in as
-[`MANUAL.md`](MANUAL.md) — §5 covers the `__global` / `__stack`
-convention, §11 the output-file formats (`rks`, `rk`, `rkr`, `pki`,
-`gam`), §14 the RK86 tape layout our wrappers produce.
+Русскоязычное руководство из оригинального проекта включено в виде
+файла [`MANUAL.md`](MANUAL.md): §5 описывает соглашения `__global` /
+`__stack`, §11 — форматы выходного файла (`rks`, `rk`, `rkr`, `pki`,
+`gam`), §14 — структуру магнитофонного файла RK86, которую собирают
+наши обёртки.
 
-## Install
+## Установка
 
 ```bash
-npm install -g c8080          # exposes `c8080`
-# or one-shot without install:
+npm install -g c8080          # ставит команду `c8080`
+# либо разово, без установки:
 npx c8080 file.c
 ```
 
-## Use
+## Использование
 
 ```bash
 c8080 [-V] [-Ocpm|-Orks] [-I<dir>] [-D<name>] [-o<bin>] file.c
 ```
 
-`-Ocpm` (default) emits a `.bin` loadable at CP/M TPA (`ORG 0x0100`).
-`-Orks` emits a Radio-86RK / Specialist tape envelope.
+`-Ocpm` (по умолчанию) — `.bin` для CP/M TPA (`ORG 0x0100`).
+`-Orks` — магнитофонный файл Specialist / Radio-86RK.
 
-## Develop
+Полный список форматов: `c8080` без аргументов выводит справку.
+
+## Разработка
 
 ```bash
 bun install
-bun test           # 164 tests (end-to-end compile + simulate)
+bun test           # 164 теста (сквозная компиляция + симуляция)
 bun run typecheck  # tsc --noEmit
-bun run build      # bundle → dist/c8080.js (for npm publish)
-bun bin/c8080.ts file.c   # run from source
+bun run build      # сборка бандла → dist/c8080.js (для npm publish)
+bun bin/c8080.ts file.c   # запуск прямо из исходников
 ```
 
-## Status
+## Состояние
 
-End-to-end pipeline: **C source → preprocess → parse → demand-link
-(`__link`) → codegen → asm → [asm8080](https://www.npmjs.com/package/asm8080)
-→ binary**. Compiled programs actually run on an in-process 8080 simulator
-that intercepts CP/M BDOS calls at `0x0005` for I/O.
+Полный конвейер: **C source → препроцессор → парсер → подгрузка по
+запросу (`__link`) → кодогенерация → ассемблер
+[asm8080](https://www.npmjs.com/package/asm8080) → бинарник**.
+Скомпилированные программы действительно исполняются на встроенном
+симуляторе 8080, который перехватывает вызовы CP/M BDOS по адресу
+`0x0005` и обрабатывает ввод-вывод.
 
-### Real-c8080-stdlib demo
+### Демонстрация с настоящей stdlib от c8080
 
 ```c
 #include <stdio.h>
@@ -68,82 +74,92 @@ $ bun bin/c8080.ts -I/path/to/c8080/include demo.c
 Done
 ```
 
-The compiler follows `__link("stdio_h/puts.c")` from `stdio.h`, parses it,
-and merges its `puts` definition into the program. Demand-linking means
-`printf` etc. are only pulled in if actually called.
+Компилятор идёт по ссылке `__link("stdio_h/puts.c")` из `stdio.h`,
+парсит указанный файл и добавляет определение `puts` в программу.
+Подгрузка по запросу означает, что `printf` и прочие функции
+попадают в сборку только если действительно вызваны.
 
-### What compiles today
+### Что сегодня компилируется
 
-| Feature | Notes |
+| Возможность | Примечания |
 |---|---|
-| Types | char, short, int, long, long long, signed/unsigned, pointers, arrays, struct, enum, typedef |
-| Statements | blocks, if/else, while, do-while, for, break, continue, return, goto, switch/case/default, `asm { … }` with preserved line structure |
-| Expressions | full C precedence ladder, assignment + compound (`+=` etc.), ternary, unary `-!~*&++--` (pre+post), `[] . ->`, casts, sizeof, comma operator, string + char literals |
-| Arithmetic | `+ - * / % << >> & \| ^` (mul/div/shifts via shipped runtime helpers; pointer arithmetic scales by element size) |
-| Comparisons | signed 16-bit `== != < <= > >=` |
-| Control flow | conditional jumps with fresh-labels; switch is a linear compare-and-branch dispatcher |
-| Structs | named fields with byte-offset layout, nested structs, `.` and `->` member read/write for byte/word/array/struct fields (array/struct fields decay to their address) |
-| Struct initializers | per-field list initializers including char[] inside struct (`{ { "ab", 10 }, ... }`); zero-fills missing tail fields |
-| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary. Mini `printf` / `sprintf` (%d, %s, %c, %%) auto-linked when called; they share an output-routing layer so either can be called without the other |
-| Preprocessor (full) | `#include` (both forms), `#define` (object- and function-like macros, variadic `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with C integer-expression evaluator + `defined(X)` + `__has_include(...)`, `#pragma once`, `#error`, CLI `-D` |
-| `__link("file.c")` | demand-linked: only files whose functions are reachable from the call graph are parsed. Parse failures of unreachable links are non-fatal |
-| `__stack` | recursion-enabled calling convention: the caller saves the callee's `__a_*` / `__l_*` slots on the CPU stack around the `CALL`, fills the new args, calls, then restores. Works for mutual recursion too. Word-sized params and locals only for now |
-| Variadic (`...`) | callsite stashes extras into a `__va_args[]` buffer; used by the mini printf. Declared-param args still follow c8080's `__a_N_<func>` convention |
-| Global initializers | scalars, strings (`char[]` → DB, `char*` → DW to interned copy), array list-initializers (as DW with padding) |
-| String escapes | `\n \r \t \0 \\ \' \" \a \b \f \v \xNN \nnn` (octal) in both char and string literals |
-| Runtime helpers | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — emitted only when referenced |
+| Типы | char, short, int, long, long long, signed/unsigned, указатели, массивы, struct, enum, typedef |
+| Операторы | блоки, if/else, while, do-while, for, break, continue, return, goto, switch/case/default, `asm { … }` с сохранением построчной структуры |
+| Выражения | полная иерархия приоритетов C, присваивание и составное (`+=` и т. д.), тернарный `?:`, унарные `-!~*&++--` (pre/post), `[] . ->`, приведение типов, sizeof, оператор запятая, строковые и символьные литералы |
+| Арифметика | `+ - * / % << >> & \| ^` (умножение/деление/сдвиги через рантаймы; арифметика указателей масштабируется по размеру элемента) |
+| Сравнения | знаковые 16-битные `== != < <= > >=` |
+| Управление потоком | условные переходы с уникальными метками; switch — линейный диспетчер сравнений |
+| Структуры | поля с байтовыми смещениями, вложенные структуры, чтение/запись по `.` и `->` для byte/word-полей и массивов/структур (поля-массивы и поля-структуры «декадируют» в адрес) |
+| Инициализаторы структур | списковая инициализация по полям, включая `char[]` внутри структуры (`{ { "ab", 10 }, ... }`); недостающие поля обнуляются |
+| Ввод-вывод | встроенные `putchar` / `puts` через BDOS; пользовательские определения имеют приоритет. Строковые литералы интернированы в бинарник. Мини-`printf` / `sprintf` (`%d`, `%s`, `%c`, `%%`) автоматически линкуются при первом вызове; они делят общий слой маршрутизации вывода, поэтому можно вызывать любой из двух независимо |
+| Препроцессор (полный) | `#include` в обеих формах, `#define` (объектные и функциоподобные макросы, вариативные `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` с вычислителем целочисленных выражений C, `defined(X)`, `__has_include(...)`, `#pragma once`, `#error`, CLI-флаг `-D` |
+| `__link("file.c")` | подгрузка по запросу: парсятся только те файлы, чьи функции достижимы из графа вызовов. Ошибки разбора в недостижимых звеньях некритичны |
+| `__stack` | соглашение вызова с поддержкой рекурсии: вызывающая сторона сохраняет слоты `__a_*` / `__l_*` вызываемой функции на CPU-стеке перед `CALL`, заполняет новые аргументы, вызывает, после возврата восстанавливает. Работает и для взаимной рекурсии. Пока только для параметров и локалов размером слово |
+| Вариативные (`...`) | на стороне вызова лишние аргументы складываются в буфер `__va_args[]`; используется мини-`printf`. Объявленные параметры по-прежнему передаются по соглашению `__a_N_<func>` |
+| Глобальные инициализаторы | скаляры, строки (`char[]` → DB, `char*` → DW на интернированную копию), списковая инициализация массивов (как DW с заполнением) |
+| Экранирования в литералах | `\n \r \t \0 \\ \' \" \a \b \f \v \xNN \nnn` (восьмеричное) — в char- и string-литералах |
+| Рантайм-помощники | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — включаются в бинарник, только если на них есть ссылка |
 
-### End-to-end tests
+### Сквозные тесты
 
-Each case in [`test/codegen/endtoend.test.ts`](test/codegen/endtoend.test.ts) compiles a C snippet, assembles it with asm8080, and runs it on the in-process 8080 simulator — authoritative list of what works today.
+Каждый тест в [`test/codegen/endtoend.test.ts`](test/codegen/endtoend.test.ts) компилирует фрагмент C, ассемблирует через asm8080 и исполняет на встроенном симуляторе 8080 — авторитетный список того, что сегодня работает.
 
-### Known gaps
+### Известные пробелы
 
-- **8-bit register path** — even `char` ops go through 16-bit HL where
-  a tighter A-register path would save instructions.
-- **Signed arithmetic edge cases** — comparisons use sign of SBB result,
-  which ignores signed-overflow cases at the edges of int16 range.
-  Multiply/divide/shift runtime helpers are unsigned.
-- **CP/M runtime integration** — `__init`/bss zeroing from c8080's
-  `include/c8080/internal.c` is not wired in. Our programs work because
-  CP/M sets up SP and we don't rely on bss being zero.
-- **c8080 stdlib with inline sjasmplus asm** — most of the
-  `include/string_h/*.c` files are hand-written sjasmplus assembly inside
-  `asm { }` blocks. sjasmplus and asm8080 disagree on syntax (e.g.
-  `label = value` vs `label: EQU value`), so those don't assemble. Pure
-  C stdlib sources (`puts.c`, etc.) work fine.
-- **Struct pass-by-value / return-by-value** — neither argument passing
-  nor returning structs by value is supported; pass pointers. Plain
-  struct assignment `a = b` (incl. `g = local`, `s = *p`) does copy.
+- **8-битный путь по регистрам.** Операции над `char` идут через
+  16-битный HL, тогда как путь через регистр A был бы короче по
+  инструкциям.
+- **Краевые случаи знаковой арифметики.** Сравнения используют знак
+  результата `SBB`, поэтому у границ int16 возможны случаи переполнения,
+  которые игнорируются. Рантаймы умножения/деления/сдвигов — беззнаковые.
+- **Интеграция рантайма CP/M.** `__init` и зануление bss из
+  `include/c8080/internal.c` не подключены. Программы работают, потому
+  что CP/M сам выставляет SP и мы не полагаемся на нулевой bss.
+- **Stdlib c8080 со вставками на sjasmplus.** Большинство файлов
+  `include/string_h/*.c` — это ассемблер sjasmplus внутри блоков
+  `asm { }`. sjasmplus и asm8080 расходятся по синтаксису
+  (`label = value` против `label: EQU value`), поэтому такие файлы не
+  ассемблируются. Чистые C-файлы stdlib (`puts.c` и т. д.) работают.
+- **Передача и возврат структур по значению.** Ни то ни другое пока
+  не поддерживается; передавайте указатели. Обычное присваивание
+  `a = b` (включая `g = local`, `s = *p`) копирует структуру как надо.
 
-### Project layout
+### Раскладка проекта
 
 ```
 src/
   frontend/
-    tokenizer.ts      port of ctokenizer.cpp
+    tokenizer.ts      порт ctokenizer.cpp
     preprocessor.ts   #include / #define / #if
-    fs.ts             Node + in-memory FS
-    lex.ts            token-stream with arbitrary lookahead
-    ast.ts            CNode / CType / CVariable union
-    parser.ts         recursive-descent C parser + __link capture
-    symbols.ts        scoped symbol table (vars, typedefs, struct tags, enums)
+    fs.ts             FileSystem-интерфейс + MemoryFileSystem
+    node-fs.ts        NodeFileSystem (вынесена, чтобы браузер-бандл
+                      не тянул node:fs)
+    lex.ts            поток токенов с произвольным lookahead
+    ast.ts            CNode / CType / CVariable / CFunction
+    parser.ts         рекурсивный парсер C + захват `__link`
+    symbols.ts        таблица символов со скоупами
   codegen/
-    i8080/compile.ts  AST → Intel-syntax 8080 assembly
-  formats/rks.ts      RK86/Specialist tape envelope
-  util/dump.ts        human-readable AST dump (used by -V)
-bin/c8080.ts          CLI: preprocess + parse + __link walk + codegen + asm8080
+    i8080/compile.ts  AST → ассемблер 8080 в Intel-синтаксисе
+  runtime/
+    printf.ts         встроенный C-исходник мини-printf/sprintf
+    link.ts           автоматическая линковка встроенных runtime-исходников
+  formats/
+    rks.ts            Specialist tape envelope
+    wrap.ts           диспетчер форматов (Specialist + asm8080's RK86)
+  util/dump.ts        человекочитаемый дамп AST (флаг -V)
+bin/c8080.ts          CLI: препроцессор + парсер + обход `__link` + кодоген + asm8080
+docs/                 браузерный playground (index.html + playground.ts → .js)
 test/
-  codegen/sim8080.ts  minimal 8080 simulator + BDOS hooks
-  codegen/endtoend.test.ts   37 C programs: compile + run + assert output
+  codegen/sim8080.ts          минимальный симулятор 8080 + хуки BDOS
+  codegen/endtoend.test.ts    сквозные C-программы: компиляция + запуск + проверка вывода
 ```
 
-### Build verification
+### Проверка сборкой
 
-The preprocessor handles 37 of 41 real c8080 sources (the 4 failures are
-all context-dependent — missing arch-specific headers or needing `__CMM`
-flag — not parser bugs). The parser reaches all of these too.
+Препроцессор справляется с 37 из 41 реального исходника c8080 (4 сбоя
+все контекстные — не хватает архитектурно-специфичных заголовков или
+флага `__CMM`, а не баги парсера). Парсер также доходит до всех 41.
 
-### License
+### Лицензия
 
-GPLv3 (inherited from c8080).
+GPLv3 (унаследовано от c8080).
