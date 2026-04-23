@@ -120,6 +120,58 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("***");
   });
 
+  test("multiply via runtime helper", () => {
+    expect(run(`
+      int mul(int a, int b) { return a * b; }
+      int main(void) { return mul(7, 13); }
+    `)).toBe(91);
+  });
+
+  test("square via multiply", () => {
+    expect(run(`
+      int main(void) { int x = 12; return x * x; }
+    `)).toBe(144);
+  });
+
+  test("multiply in expression", () => {
+    expect(run(`
+      int main(void) { return 3 + 4 * 5; }
+    `)).toBe(23);
+  });
+
+  test("divide via runtime helper", () => {
+    expect(run(`
+      int divFn(int a, int b) { return a / b; }
+      int main(void) { return divFn(100, 7); }
+    `)).toBe(14);
+  });
+
+  test("modulo via runtime helper", () => {
+    expect(run(`
+      int modFn(int a, int b) { return a % b; }
+      int main(void) { return modFn(100, 7); }
+    `)).toBe(2);
+  });
+
+  test("shift left by constant", () => {
+    expect(run(`
+      int main(void) { return 1 << 10; }
+    `)).toBe(1024);
+  });
+
+  test("print digit sequence via /,%", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        int n = 123;
+        putchar('0' + n / 100);
+        putchar('0' + (n / 10) % 10);
+        putchar('0' + n % 10);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("123");
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

@@ -87,6 +87,57 @@ class Cpu {
       case 0x03: this.setBC(this.bc() + 1); return true;
       case 0x2B: this.setHL(this.hl() - 1); return true;
       case 0x1B: this.setDE(this.de() - 1); return true;
+      case 0x0B: this.setBC(this.bc() - 1); return true; // DCX B
+      case 0x17: { // RAL: A = (A << 1) | CF; new CF = old bit 7
+        const oldCF = this.cf ? 1 : 0;
+        this.cf = (this.a & 0x80) !== 0;
+        this.a = ((this.a << 1) | oldCF) & 0xff;
+        return true;
+      }
+      case 0x1F: { // RAR: A = (A >> 1) | (CF << 7); new CF = old bit 0
+        const oldCF = this.cf ? 0x80 : 0;
+        this.cf = (this.a & 0x01) !== 0;
+        this.a = (this.a >> 1) | oldCF;
+        return true;
+      }
+      case 0x07: { // RLC
+        this.cf = (this.a & 0x80) !== 0;
+        this.a = ((this.a << 1) | (this.cf ? 1 : 0)) & 0xff;
+        return true;
+      }
+      case 0x0F: { // RRC
+        this.cf = (this.a & 0x01) !== 0;
+        this.a = (this.a >> 1) | (this.cf ? 0x80 : 0);
+        return true;
+      }
+      case 0xE6: { this.a = this.a & this.fetch(); this.cf = false; this.setFlagsByte(this.a); return true; } // ANI
+      case 0xF6: { this.a = this.a | this.fetch(); this.cf = false; this.setFlagsByte(this.a); return true; } // ORI
+      case 0xEE: { this.a = this.a ^ this.fetch(); this.cf = false; this.setFlagsByte(this.a); return true; } // XRI
+      case 0xC6: { const r = this.a + this.fetch(); this.setFlagsByteCarry(r); this.a = r & 0xff; return true; } // ADI
+      case 0xD6: { const r = this.a - this.fetch(); this.setFlagsByteCarry(r); this.a = r & 0xff; return true; } // SUI
+      case 0xCE: { const r = this.a + this.fetch() + (this.cf ? 1 : 0); this.setFlagsByteCarry(r); this.a = r & 0xff; return true; } // ACI
+      case 0xDE: { const r = this.a - this.fetch() - (this.cf ? 1 : 0); this.setFlagsByteCarry(r); this.a = r & 0xff; return true; } // SBI
+      case 0xFE: { const r = this.a - this.fetch(); this.setFlagsByteCarry(r); return true; } // CPI
+      case 0x04: this.b = (this.b + 1) & 0xff; this.setFlagsByte(this.b); return true; // INR B
+      case 0x0C: this.c = (this.c + 1) & 0xff; this.setFlagsByte(this.c); return true;
+      case 0x14: this.d = (this.d + 1) & 0xff; this.setFlagsByte(this.d); return true;
+      case 0x1C: this.e = (this.e + 1) & 0xff; this.setFlagsByte(this.e); return true;
+      case 0x24: this.h = (this.h + 1) & 0xff; this.setFlagsByte(this.h); return true;
+      case 0x2C: this.l = (this.l + 1) & 0xff; this.setFlagsByte(this.l); return true;
+      case 0x3C: this.a = (this.a + 1) & 0xff; this.setFlagsByte(this.a); return true; // INR A
+      case 0x05: this.b = (this.b - 1) & 0xff; this.setFlagsByte(this.b); return true; // DCR B
+      case 0x0D: this.c = (this.c - 1) & 0xff; this.setFlagsByte(this.c); return true;
+      case 0x15: this.d = (this.d - 1) & 0xff; this.setFlagsByte(this.d); return true;
+      case 0x1D: this.e = (this.e - 1) & 0xff; this.setFlagsByte(this.e); return true;
+      case 0x25: this.h = (this.h - 1) & 0xff; this.setFlagsByte(this.h); return true;
+      case 0x2D: this.l = (this.l - 1) & 0xff; this.setFlagsByte(this.l); return true;
+      case 0x3D: this.a = (this.a - 1) & 0xff; this.setFlagsByte(this.a); return true; // DCR A
+      case 0xC0: if (!this.zf) { this.pc = this.popWord(); } return true; // RNZ
+      case 0xC8: if (this.zf) { this.pc = this.popWord(); } return true; // RZ
+      case 0xD0: if (!this.cf) { this.pc = this.popWord(); } return true; // RNC
+      case 0xD8: if (this.cf) { this.pc = this.popWord(); } return true; // RC
+      case 0xF0: if (!this.sf) { this.pc = this.popWord(); } return true; // RP
+      case 0xF8: if (this.sf) { this.pc = this.popWord(); } return true; // RM
     }
     if (opcode >= 0x40 && opcode <= 0x7f && opcode !== 0x76) {
       const dst = (opcode >> 3) & 7;

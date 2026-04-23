@@ -238,6 +238,35 @@ function compileBinary(
       out.instruction("DAD", "D");
       return;
     }
+    case "mul":
+      out.instruction("CALL", "__o_mul_u16");
+      out.noteCallTo("__o_mul_u16");
+      return;
+    case "div": {
+      // Need dividend in HL, divisor in DE; currently DE=LHS, HL=RHS → XCHG to swap.
+      out.instruction("XCHG");
+      out.instruction("CALL", "__o_div_u16");
+      out.noteCallTo("__o_div_u16");
+      return;
+    }
+    case "mod": {
+      out.instruction("XCHG");
+      out.instruction("CALL", "__o_div_u16");
+      out.noteCallTo("__o_div_u16");
+      out.instruction("XCHG"); // remainder is in DE, move to HL
+      return;
+    }
+    case "shl": {
+      // HL = DE << HL (only low byte of HL matters for shift amount).
+      out.instruction("CALL", "__o_shl_u16");
+      out.noteCallTo("__o_shl_u16");
+      return;
+    }
+    case "shr": {
+      out.instruction("CALL", "__o_shr_u16");
+      out.noteCallTo("__o_shr_u16");
+      return;
+    }
     case "eq": case "ne": case "lt": case "le": case "gt": case "ge":
       compileCompare(out, op);
       return;
@@ -559,6 +588,97 @@ function typeSize(t: CType): number {
 }
 
 const RUNTIME_HELPERS: Record<string, string> = {
+  __o_mul_u16: `
+__o_mul_u16:
+    MOV   B,H
+    MOV   C,L
+    LXI   H,0
+    MVI   A,16
+.Lmulloop:
+    DAD   H
+    XCHG
+    DAD   H
+    XCHG
+    JNC   .Lmulskip
+    DAD   B
+.Lmulskip:
+    DCR   A
+    JNZ   .Lmulloop
+    RET
+`,
+  __o_div_u16: `
+__o_div_u16:
+    MOV   B,D
+    MOV   C,E
+    LXI   D,0
+    MVI   A,16
+    STA   __o_div_cnt
+.Ldivloop:
+    DAD   H
+    MOV   A,E
+    RAL
+    MOV   E,A
+    MOV   A,D
+    RAL
+    MOV   D,A
+    MOV   A,E
+    SUB   C
+    MOV   E,A
+    MOV   A,D
+    SBB   B
+    MOV   D,A
+    JC    .Ldivrestore
+    INR   L
+    JMP   .Ldivnext
+.Ldivrestore:
+    MOV   A,E
+    ADD   C
+    MOV   E,A
+    MOV   A,D
+    ADC   B
+    MOV   D,A
+.Ldivnext:
+    LDA   __o_div_cnt
+    DCR   A
+    STA   __o_div_cnt
+    JNZ   .Ldivloop
+    RET
+
+__o_div_cnt:
+    DS    1
+`,
+  __o_shl_u16: `
+__o_shl_u16:
+    MOV   A,L
+    ANI   0Fh
+    RZ
+    XCHG
+    MOV   B,A
+.Lshlloop:
+    DAD   H
+    DCR   B
+    JNZ   .Lshlloop
+    RET
+`,
+  __o_shr_u16: `
+__o_shr_u16:
+    MOV   A,L
+    ANI   0Fh
+    RZ
+    XCHG
+    MOV   B,A
+.Lshrloop:
+    MOV   A,H
+    ORA   A
+    RAR
+    MOV   H,A
+    MOV   A,L
+    RAR
+    MOV   L,A
+    DCR   B
+    JNZ   .Lshrloop
+    RET
+`,
   putchar: `
 putchar:
     MOV   E,L
