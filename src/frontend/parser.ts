@@ -100,14 +100,20 @@ export class Parser {
   }
 
   private wrapArrayBounds(base: CType): CType {
-    let t = base;
+    const dims: Array<number | null> = [];
     while (this.lex.ifText("[")) {
-      while (!this.lex.ifText("]")) {
-        if (this.lex.atEnd()) this.lex.throwHere("unterminated array bounds");
-        this.lex.advance();
+      let length: number | null = null;
+      if (!this.lex.peekText("]")) {
+        const expr = this.parseAssign();
+        const folded = foldConstNode(expr);
+        if (folded !== null) length = Number(folded);
       }
-      t = { kind: "array", of: t, length: null };
+      this.lex.needText("]");
+      dims.push(length);
     }
+    // Build array types from innermost to outermost: T[a][b] ≡ array-of(array-of(T, b), a).
+    let t = base;
+    for (let i = dims.length - 1; i >= 0; i--) t = { kind: "array", of: t, length: dims[i]! };
     return t;
   }
 
@@ -178,6 +184,7 @@ export class Parser {
       const ts = this.parseDeclSpec();
       const stars = this.parsePointers();
       const pname = this.lex.ifIdent() ?? "";
+      // For parameters, T[N] decays to T* so we consume the brackets but ignore the size.
       while (this.lex.ifText("[")) {
         while (!this.lex.ifText("]")) {
           if (this.lex.atEnd()) this.lex.throwHere("unterminated array bounds");
@@ -450,8 +457,7 @@ export class Parser {
       const declPos = this.pos();
       const stars = this.parsePointers();
       const name = this.lex.needIdent();
-      const baseWithPtr = this.wrapPointers(ts.base, stars);
-      const type = this.wrapArrayBounds(baseWithPtr);
+      const type = this.wrapArrayBounds(this.wrapPointers(ts.base, stars));
       const local: CVariable = {
         name, type, pos: declPos,
         storage: ts.storage === "auto" ? "auto" : ts.storage,

@@ -612,30 +612,75 @@ function compileIncDec(out: Emitter, op: string, arg: CNode, warnings: string[])
     return;
   }
   if (arg.kind === "unary" && arg.op === "deref") {
-    // *p ++ / --: load through pointer, bump, store back.
-    compileExpression(out, arg.arg, warnings); // HL = address
-    out.instruction("PUSH", "H");
-    const byte = derefIsByte(arg.arg);
-    if (byte) {
-      out.instruction("MOV", "A,M");
-      if (!isPre) { out.instruction("MOV", "L,A"); out.instruction("MVI", "H,0"); out.instruction("PUSH", "H"); }
-      out.instruction(delta > 0 ? "INR" : "DCR", "A");
-      out.instruction("POP", "D"); // restore address (or old value for post)
-      // Need HL = address again: we pushed twice; pop both correctly:
-      // Actually let's just use a different approach below.
-    }
-    warnings.push(`${op} on dereferenced pointer not fully supported`);
-    out.instruction("POP", "H");
-    out.instruction("LXI", "H,0");
+    compileIncDecAtAddress(out, op, arg.arg, derefIsByte(arg.arg), warnings);
     return;
   }
   if (arg.kind === "member") {
-    warnings.push(`${op} on struct member not yet supported`);
-    out.instruction("LXI", "H,0");
+    const field = resolveField(arg);
+    if (!field) { warnings.push(`${op} on unresolved member`); out.instruction("LXI", "H,0"); return; }
+    // Compute member address leaving HL = addr.
+    if (arg.arrow) compileExpression(out, arg.object, warnings);
+    else compileAddrOf(out, arg.object, warnings);
+    if (field.offset > 0) {
+      out.instruction("LXI", `D,${field.offset}`);
+      out.instruction("DAD", "D");
+    }
+    compileIncDecAtAddress(out, op, { kind: "const", pos: arg.pos, type: { kind: "base", base: "int" }, value: 0n }, isByteType(field.type), warnings, true);
     return;
   }
   warnings.push(`${op} on this operand not supported`);
   out.instruction("LXI", "H,0");
+}
+
+function compileIncDecAtAddress(
+  out: Emitter,
+  op: string,
+  addrExpr: CNode,
+  byte: boolean,
+  warnings: string[],
+  addrInHL: boolean = false,
+): void {
+  const isPre = op === "preinc" || op === "predec";
+  const delta = op === "preinc" || op === "postinc" ? 1 : -1;
+  // HL must end up with the address before we start.
+  if (!addrInHL) compileExpression(out, addrExpr, warnings);
+  // Load, mutate, store. Leave value in HL (old for post, new for pre).
+  if (byte) {
+    // Byte pointer
+    out.instruction("MOV", "A,M");              // A = *addr
+    if (!isPre) {
+      out.instruction("PUSH", "PSW");           // save old value
+    }
+    out.instruction(delta > 0 ? "INR" : "DCR", "A");
+    out.instruction("MOV", "M,A");              // *addr = new
+    if (!isPre) {
+      out.instruction("POP", "PSW");            // restore old
+    }
+    out.instruction("MOV", "L,A");
+    out.instruction("MVI", "H,0");
+    return;
+  }
+  // Word pointer: value is 16 bits at [addr, addr+1].
+  out.instruction("MOV", "E,M");
+  out.instruction("INX", "H");
+  out.instruction("MOV", "D,M");                // DE = *addr
+  out.instruction("DCX", "H");                   // HL back to base addr
+  if (!isPre) {
+    out.instruction("PUSH", "D");               // save old 16-bit
+  }
+  // Increment/decrement DE
+  if (delta > 0) out.instruction("INX", "D");
+  else out.instruction("DCX", "D");
+  // Store back
+  out.instruction("MOV", "M,E");
+  out.instruction("INX", "H");
+  out.instruction("MOV", "M,D");
+  out.instruction("DCX", "H");
+  if (isPre) {
+    out.instruction("XCHG");                    // HL = new value
+  } else {
+    out.instruction("POP", "H");                // HL = old value
+  }
 }
 
 function compileDeref(out: Emitter, arg: CNode, warnings: string[]): void {

@@ -510,6 +510,55 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("2 3 5 7 11 13 17 19 23 29 ");
   });
 
+  test("struct member post-increment", () => {
+    expect(run(`
+      struct Counter { int n; };
+      struct Counter c;
+      int main(void) {
+        c.n = 10;
+        int a = c.n++;
+        int b = c.n++;
+        return a + b + c.n;
+      }
+    `)).toBe(10 + 11 + 12);
+  });
+
+  test("pointer byte post-increment", () => {
+    const r = runWithOutput(`
+      char buf[4];
+      int main(void) {
+        buf[0] = 'a'; buf[1] = 'b'; buf[2] = 'c'; buf[3] = 0;
+        char *p = buf;
+        while (*p) { putchar(*p); p = p + 1; }
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("abc");
+  });
+
+  test("iterative putint handles 0..65535", () => {
+    const r = runWithOutput(`
+      void putint_u(int n) {
+        char buf[6];
+        int i = 0;
+        if (n == 0) { putchar('0'); return; }
+        while (n > 0) {
+          buf[i] = '0' + n % 10;
+          n = n / 10;
+          i = i + 1;
+        }
+        while (i > 0) { i = i - 1; putchar(buf[i]); }
+      }
+      int main(void) {
+        putint_u(0); putchar(' ');
+        putint_u(42); putchar(' ');
+        putint_u(12345);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("0 42 12345");
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

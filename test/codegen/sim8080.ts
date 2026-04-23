@@ -80,6 +80,23 @@ class Cpu {
       case 0xE1: this.setHL(this.popWord()); return true;
       case 0xD1: this.setDE(this.popWord()); return true;
       case 0xC1: this.setBC(this.popWord()); return true;
+      case 0xF5: { // PUSH PSW (A + flags)
+        let flags = 0x02; // reserved bit
+        if (this.sf) flags |= 0x80;
+        if (this.zf) flags |= 0x40;
+        if (this.cf) flags |= 0x01;
+        this.pushWord((this.a << 8) | flags);
+        return true;
+      }
+      case 0xF1: { // POP PSW
+        const w = this.popWord();
+        const flags = w & 0xff;
+        this.a = (w >> 8) & 0xff;
+        this.sf = (flags & 0x80) !== 0;
+        this.zf = (flags & 0x40) !== 0;
+        this.cf = (flags & 0x01) !== 0;
+        return true;
+      }
       case 0x2F: this.a = (~this.a) & 0xff; return true;
       case 0xEB: { const h = this.h, l = this.l; this.h = this.d; this.l = this.e; this.d = h; this.e = l; return true; }
       case 0x23: this.setHL(this.hl() + 1); return true;
