@@ -50,7 +50,7 @@ bun install
 bun test           # 164 теста (сквозная компиляция + симуляция)
 bun run typecheck  # tsc --noEmit
 bun run build      # сборка бандла → dist/c8080.js (для npm publish)
-bun bin/c8080.ts file.c   # запуск прямо из исходников
+bunx c8080 file.c   # (после `bun run build`)
 ```
 
 ## Состояние
@@ -70,7 +70,7 @@ int main(void) { puts("Hello from real c8080 stdlib!"); return 0; }
 ```
 
 ```bash
-$ bun bin/c8080.ts -I/path/to/c8080/include demo.c
+$ npx c8080 -I/path/to/c8080/include demo.c
 Done
 ```
 
