@@ -37,6 +37,12 @@ function run(src: string): number {
   return simulate(bin).hl;
 }
 
+function runWithOutput(src: string): { hl: number; output: string } {
+  const { bin } = build(src);
+  const r = simulate(bin);
+  return { hl: r.hl, output: r.output };
+}
+
 describe("codegen — end-to-end", () => {
   test("return constant", () => {
     expect(run(`int main(void) { return 42; }`)).toBe(42);
@@ -81,6 +87,37 @@ describe("codegen — end-to-end", () => {
       int abs(int x) { if (x < 0) return 0 - x; else return x; }
       int main(void) { return abs(0 - 17); }
     `)).toBe(17);
+  });
+
+  test("putchar prints a single character", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        putchar('A');
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("A");
+  });
+
+  test("puts prints a string", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        puts("hello");
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("hello");
+  });
+
+  test("multiple putchars via loop", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        int i;
+        for (i = 0; i < 3; i = i + 1) putchar('*');
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("***");
   });
 
   test("iterative fibonacci(10) = 55", () => {

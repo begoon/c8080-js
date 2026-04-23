@@ -21,12 +21,14 @@ export function compileProgram(p: CProgram, options: { org?: number } = {}): Com
 
   for (const g of p.globals) out.declareGlobal(g);
 
+  const userFuncNames = new Set(p.functions.filter((f) => f.body !== null).map((f) => f.name));
   for (const f of p.functions) {
     if (f.body === null) continue;
     compileFunction(out, f, warnings);
     out.blank();
   }
 
+  out.emitRuntimeHelpers(userFuncNames);
   out.emitStaticStack();
   out.emitGlobalsStorage();
   out.directive("END");
@@ -349,7 +351,7 @@ function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings
     return;
   }
   const name = n.target.name;
-  // Store args 1..N-1 into __a_N_<callee>, then put last arg in HL, then CALL.
+  out.noteCallTo(name);
   const args = n.args;
   for (let i = 0; i < args.length - 1; i++) {
     compileExpression(out, args[i]!, warnings);
@@ -456,6 +458,19 @@ class Emitter {
   }
   endFunction(): void { this.currentFrame = null; }
 
+  private readonly callsSeen = new Set<string>();
+  noteCallTo(name: string): void { this.callsSeen.add(name); }
+
+  emitRuntimeHelpers(userDefined: ReadonlySet<string>): void {
+    for (const name of this.callsSeen) {
+      if (userDefined.has(name)) continue;
+      const helper = RUNTIME_HELPERS[name];
+      if (!helper) continue;
+      this.blank();
+      this.raw(helper.trimEnd());
+    }
+  }
+
   findVariableStorage(name: string, v: CVariable): string {
     if (this.currentFrame !== null) {
       // Is it a parameter of the current function?
@@ -477,7 +492,7 @@ class Emitter {
   internString(s: string): string {
     const existing = this.strings.get(s);
     if (existing !== undefined) return existing;
-    const label = `.Lstr${this.strings.size}`;
+    const label = `__str${this.strings.size}`;
     this.strings.set(s, label);
     return label;
   }
@@ -542,6 +557,38 @@ function typeSize(t: CType): number {
   if (t.kind === "function") return 0;
   return 0;
 }
+
+const RUNTIME_HELPERS: Record<string, string> = {
+  putchar: `
+putchar:
+    MOV   E,L
+    MVI   C,2
+    CALL  5
+    RET
+`,
+  puts: `
+puts:
+    SHLD  __rt_puts_p
+.Lputsloop:
+    LHLD  __rt_puts_p
+    MOV   A,M
+    ORA   A
+    JZ    .Lputsdone
+    MOV   E,A
+    MVI   C,2
+    PUSH  H
+    CALL  5
+    POP   H
+    INX   H
+    SHLD  __rt_puts_p
+    JMP   .Lputsloop
+.Lputsdone:
+    RET
+
+__rt_puts_p:
+    DS    2
+`,
+};
 
 function encodeDbString(s: string): string {
   const parts: string[] = [];

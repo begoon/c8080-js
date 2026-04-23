@@ -6,6 +6,7 @@ export type SimResult = {
   readonly a: number;
   readonly steps: number;
   readonly memory: Uint8Array;
+  readonly output: string;
 };
 
 class Cpu {
@@ -130,13 +131,44 @@ export function simulate(binary: Uint8Array, entry = 0x0100, maxSteps = 200_000)
   const sentinel = 0xdead;
   cpu.pushWord(sentinel);
 
+  const outputBytes: number[] = [];
   let steps = 0;
   while (cpu.pc !== sentinel) {
+    // CP/M BDOS trap at 0x0005.
+    if (cpu.pc === 0x0005) {
+      bdosCall(cpu, outputBytes);
+      cpu.pc = cpu.popWord();
+      steps++;
+      continue;
+    }
     if (!cpu.step()) {
       const op = cpu.mem[cpu.pc - 1]!;
       throw new Error(`unhandled opcode 0x${op.toString(16)} at PC=0x${(cpu.pc - 1).toString(16)}`);
     }
     if (++steps > maxSteps) throw new Error(`runaway after ${maxSteps} steps`);
   }
-  return { hl: cpu.hl(), a: cpu.a, steps, memory: cpu.mem };
+  return {
+    hl: cpu.hl(), a: cpu.a, steps, memory: cpu.mem,
+    output: String.fromCharCode(...outputBytes),
+  };
+}
+
+function bdosCall(cpu: Cpu, output: number[]): void {
+  switch (cpu.c) {
+    case 2: // console output: print char in E
+      output.push(cpu.e);
+      return;
+    case 9: { // print $-terminated string at DE
+      let addr = cpu.de();
+      for (let i = 0; i < 65536; i++) {
+        const ch = cpu.mem[addr]!;
+        if (ch === 0x24 /* $ */) return;
+        output.push(ch);
+        addr = (addr + 1) & 0xffff;
+      }
+      return;
+    }
+    default:
+      throw new Error(`unsupported BDOS call C=${cpu.c}`);
+  }
 }
