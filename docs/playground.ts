@@ -18,23 +18,22 @@ type Result = {
   error: string | null;
 };
 
-const DEFAULT_SOURCE = `// c8080 playground — edit below, recompiles on every keystroke.
-// "Run" assembles an .rk tape file and boots it on the rk86.ru emulator.
-// Radio-86RK monitor entry points: 0xF818 prints ASCIIZ from HL,
-// 0xF86C returns to the monitor prompt.
-
-char *msg = "Aloha!";
-
-void print(char *s) {
-    asm { CALL  0F818h }
-}
-
-int main(void) {
-    print(msg);
-    asm { JMP   0F86Ch }
-    return 0;
-}
+// Fallback when initial.c isn't reachable (e.g. offline, or the playground
+// is served from a host that doesn't expose the file). The canonical
+// starter program lives at docs/initial.c so it can be edited without
+// rebuilding the bundle.
+const FALLBACK_SOURCE = `int main(void) { puts("hello, c8080"); return 0; }
 `;
+
+async function fetchInitialSource(): Promise<string> {
+  try {
+    const r = await fetch("initial.c", { cache: "no-store" });
+    if (!r.ok) return FALLBACK_SOURCE;
+    return await r.text();
+  } catch {
+    return FALLBACK_SOURCE;
+  }
+}
 
 // The playground uses ORG 0 — the same origin the RK tape-wrappers expect.
 // The `rkStart`/`rkEnd` range tracks the actual code span so we can feed
@@ -128,7 +127,7 @@ function toBase64(bytes: Uint8Array): string {
 
 const EMULATOR_URL = "https://rk86.ru/beta/index.html";
 
-function init(): void {
+async function init(): Promise<void> {
   const srcEl = document.getElementById("source") as HTMLTextAreaElement;
   const asmEl = document.getElementById("asm") as HTMLPreElement;
   const errEl = document.getElementById("error") as HTMLDivElement;
@@ -179,7 +178,7 @@ function init(): void {
   });
 
   const saved = localStorage.getItem(STORAGE_KEY);
-  srcEl.value = saved ?? DEFAULT_SOURCE;
+  srcEl.value = saved ?? (await fetchInitialSource());
 
   runBtn.addEventListener("click", () => {
     if (!latest || !latest.bytes || latest.error) return;
@@ -225,7 +224,7 @@ function init(): void {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => { void init(); });
 } else {
-  init();
+  void init();
 }

@@ -5456,23 +5456,18 @@ function wrapRks(payload) {
 }
 
 // docs/playground.ts
-var DEFAULT_SOURCE = `// c8080 playground — edit below, recompiles on every keystroke.
-// "Run" assembles an .rk tape file and boots it on the rk86.ru emulator.
-// Radio-86RK monitor entry points: 0xF818 prints ASCIIZ from HL,
-// 0xF86C returns to the monitor prompt.
-
-char *msg = "Aloha!";
-
-void print(char *s) {
-    asm { CALL  0F818h }
-}
-
-int main(void) {
-    print(msg);
-    asm { JMP   0F86Ch }
-    return 0;
-}
+var FALLBACK_SOURCE = `int main(void) { puts("hello, c8080"); return 0; }
 `;
+async function fetchInitialSource() {
+  try {
+    const r = await fetch("initial.c", { cache: "no-store" });
+    if (!r.ok)
+      return FALLBACK_SOURCE;
+    return await r.text();
+  } catch {
+    return FALLBACK_SOURCE;
+  }
+}
 var PLAYGROUND_ORG = 0;
 function compile(source) {
   try {
@@ -5556,7 +5551,7 @@ function toBase64(bytes) {
   return btoa(s);
 }
 var EMULATOR_URL = "https://rk86.ru/beta/index.html";
-function init() {
+async function init() {
   const srcEl = document.getElementById("source");
   const asmEl = document.getElementById("asm");
   const errEl = document.getElementById("error");
@@ -5612,7 +5607,7 @@ function init() {
     triggerDownload(`${name}.${fmt}`, new Blob([out], { type: "application/octet-stream" }));
   });
   const saved = localStorage.getItem(STORAGE_KEY);
-  srcEl.value = saved ?? DEFAULT_SOURCE;
+  srcEl.value = saved ?? await fetchInitialSource();
   runBtn.addEventListener("click", () => {
     if (!latest || !latest.bytes || latest.error)
       return;
@@ -5657,7 +5652,9 @@ function init() {
   run();
 }
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("DOMContentLoaded", () => {
+    init();
+  });
 } else {
   init();
 }
