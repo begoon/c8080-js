@@ -550,8 +550,6 @@ function resolveField(n: Extract<CNode, { kind: "member" }>): StructField | null
 }
 
 function structTypeOf(n: CNode, isArrowContext: boolean): Extract<CType, { kind: "struct" }> | null {
-  // For a.x: n should have struct type directly.
-  // For a->x: n should have pointer-to-struct type.
   if (n.kind === "var" && n.resolved) {
     const t = n.resolved.type;
     if (isArrowContext) {
@@ -561,11 +559,30 @@ function structTypeOf(n: CNode, isArrowContext: boolean): Extract<CType, { kind:
     }
   }
   if (n.kind === "unary" && n.op === "deref") {
-    // *p where p is pointer-to-struct
-    const inner = n.arg;
-    if (inner.kind === "var" && inner.resolved && inner.resolved.type.kind === "pointer" && inner.resolved.type.to.kind === "struct") {
-      return inner.resolved.type.to;
+    return elementStructType(n.arg);
+  }
+  if (n.kind === "member") {
+    // Chained member access: compute the type of .field.
+    const parent = structTypeOf(n.object, n.arrow);
+    if (parent && parent.fields) {
+      const f = parent.fields.find((ff) => ff.name === n.field);
+      if (f && f.type.kind === "struct") return f.type;
     }
+  }
+  return null;
+}
+
+function elementStructType(n: CNode): Extract<CType, { kind: "struct" }> | null {
+  if (n.kind === "var" && n.resolved) {
+    const t = n.resolved.type;
+    if (t.kind === "pointer" && t.to.kind === "struct") return t.to;
+    if (t.kind === "array" && t.of.kind === "struct") return t.of;
+  }
+  if (n.kind === "binary" && n.op === "add") {
+    return elementStructType(n.lhs) ?? elementStructType(n.rhs);
+  }
+  if (n.kind === "unary" && (n.op === "preinc" || n.op === "predec" || n.op === "postinc" || n.op === "postdec")) {
+    return elementStructType(n.arg);
   }
   return null;
 }
@@ -1054,7 +1071,7 @@ function typeSize(t: CType): number {
   }
   if (t.kind === "pointer") return 2;
   if (t.kind === "array") return typeSize(t.of) * (t.length ?? 0);
-  if (t.kind === "struct") return 0; // unknown for MVP
+  if (t.kind === "struct") return t.size;
   if (t.kind === "function") return 0;
   return 0;
 }

@@ -559,6 +559,19 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("0 42 12345");
   });
 
+  test("array of struct: arr[i].x = v and arr[i].x read", () => {
+    expect(run(`
+      struct Point { int x; int y; };
+      struct Point arr[3];
+      int main(void) {
+        arr[0].x = 10; arr[0].y = 11;
+        arr[1].x = 20; arr[1].y = 21;
+        arr[2].x = 30; arr[2].y = 31;
+        return arr[0].x + arr[1].y + arr[2].x;
+      }
+    `)).toBe(10 + 21 + 30);
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —
