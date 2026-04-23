@@ -103,14 +103,15 @@ button.danger:active:not(:disabled) { background: #4a2323; }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 10;
 }
 .modal[hidden] { display: none; }
 
 .modal-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: #2a2c31;
   border: 1px solid #4a4b50;
   border-radius: 6px;
