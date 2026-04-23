@@ -17,15 +17,23 @@ function usage(): void {
 Options:
   -m         Compile CMM language
   -I<path>   Add include directory
-  -Ocpm      Make binary file for CP/M (default)
-  -Oi1080    Make binary file for Iskra 1080 Tartu
-  -Orks      Make binary file for Specialist / Radio-86RK
   -D<define> Set #define
   -o<file>   Set name for output binary file
   -a<file>   Set name for output assembler file
   -V         Print expression tree after parsing
   -W         Print expression tree after compilation
-  --         Last option`);
+  --         Last option
+
+Output formats (-O<fmt>):
+  -Ocpm      CP/M .bin at ORG 0x0100 (default)
+  -Oi1080    Iskra 1080 Tartu .bin at ORG 0x0100
+  -Obin      Raw assembled bytes, no wrapper
+  -Orks      Specialist tape envelope
+             (start_lo start_hi end_lo end_hi + payload + 16-bit cksum)
+  -Ork       Radio-86RK tape .rk  (start_hi start_lo end_hi end_lo + payload + E6 cksum)
+  -Orkr      Radio-86RK tape .rkr (same structure as .rk)
+  -Opki      Radio-86RK .pki (E6 sync + .rk layout)
+  -Ogam      Radio-86RK .gam (same as .pki)`);
 }
 
 async function main(): Promise<number> {
