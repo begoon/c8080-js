@@ -28,7 +28,12 @@ type TypeSpec = {
 
 export class Parser {
   readonly symbols = new SymbolTable();
+  // Per-declaration link info: keyed by the function name, value is the link
+  // file path (relative) and the source file where the __link attribute was
+  // encountered. We resolve against sourceFile's dir first for c8080 semantics.
+  readonly functionLinks = new Map<string, { rel: string; sourceFile: string }>();
   private currentFunctionLocals: CVariable[] = [];
+  private lastDeclaredName: string | null = null;
 
   constructor(private readonly lex: Lex) {}
 
@@ -120,7 +125,9 @@ export class Parser {
   ): void {
     const retType = this.wrapPointers(ts.base, retStars);
     const params = this.parseParamList();
+    this.lastDeclaredName = name;
     this.skipTrailingAttributes();
+    this.lastDeclaredName = null;
     const funcType: CType = {
       kind: "function",
       ret: retType,
@@ -240,7 +247,21 @@ export class Parser {
 
   private skipTrailingAttributes(): void {
     for (;;) {
-      if (this.lex.peekIdent("__link") || this.lex.peekIdent("__attribute__") || this.lex.peekIdent("__address")) {
+      if (this.lex.peekIdent("__link")) {
+        const sourceFile = this.lex.fileName;
+        this.lex.advance();
+        this.lex.needText("(");
+        if (this.lex.kind === "string2") {
+          const rel = this.lex.text.slice(1, -1);
+          if (this.lastDeclaredName !== null) {
+            this.functionLinks.set(this.lastDeclaredName, { rel, sourceFile });
+          }
+          this.lex.advance();
+        }
+        this.lex.needText(")");
+        continue;
+      }
+      if (this.lex.peekIdent("__attribute__") || this.lex.peekIdent("__address")) {
         this.lex.advance();
         this.lex.needText("(");
         let depth = 1;
@@ -500,15 +521,20 @@ export class Parser {
     this.lex.needText("{");
     const parts: string[] = [];
     let depth = 1;
+    let lastLine = this.lex.line;
+    let lastFile = this.lex.fileName;
     while (depth > 0) {
       if (this.lex.atEnd()) this.lex.throwHere("unterminated asm { ... }");
       if (this.lex.peekText("{")) depth++;
       else if (this.lex.peekText("}")) { depth--; if (depth === 0) break; }
-      parts.push(this.lex.text);
+      const sep = (this.lex.line !== lastLine || this.lex.fileName !== lastFile) ? "\n" : " ";
+      parts.push(sep, this.lex.text);
+      lastLine = this.lex.line;
+      lastFile = this.lex.fileName;
       this.lex.advance();
     }
     this.lex.advance(); // closing '}'
-    return { kind: "asm", pos, text: parts.join(" ") };
+    return { kind: "asm", pos, text: parts.join("").trimStart() };
   }
 
   private parseReturn(): CNode {
@@ -719,6 +745,16 @@ export class Parser {
     return false;
   }
 
+  private isTypeStart(): boolean {
+    const t = this.lex.text;
+    if (this.lex.kind !== "ident") return false;
+    if (BASE_TYPE_KEYWORDS.has(t)) return true;
+    if (TYPE_QUAL_KEYWORDS.has(t)) return true;
+    if (t === "struct" || t === "union" || t === "enum") return true;
+    if (this.symbols.hasTypedef(t)) return true;
+    return false;
+  }
+
   private parsePostfix(): CNode {
     let node = this.parsePrimary();
     for (;;) {
@@ -780,9 +816,30 @@ export class Parser {
       return { kind: "const", pos, type: { kind: "base", base: "int" }, value };
     }
     if (this.lex.ifText("(")) {
-      const e = this.parseExpression();
+      const e = this.parseExpressionWithComma();
       this.lex.needText(")");
       return e;
+    }
+    if (this.lex.peekIdent("sizeof")) {
+      this.lex.advance();
+      let size = 2;
+      if (this.lex.ifText("(")) {
+        if (this.isTypeStart()) {
+          const ts = this.parseDeclSpec();
+          const stars = this.parsePointers();
+          let t = this.wrapPointers(ts.base, stars);
+          t = this.wrapArrayBounds(t);
+          size = Math.max(fieldTypeSize(t), 1);
+        } else {
+          const inner = this.parseExpressionWithComma();
+          size = sizeofExpr(inner);
+        }
+        this.lex.needText(")");
+      } else {
+        const inner = this.parseUnary();
+        size = sizeofExpr(inner);
+      }
+      return { kind: "const", pos, type: { kind: "base", base: "uint" }, value: BigInt(size) };
     }
     if (this.lex.kind === "ident") {
       const name = this.lex.text;
@@ -802,6 +859,13 @@ export class Parser {
   private pos(): SrcPos {
     return { file: this.lex.fileName, line: this.lex.line, column: this.lex.column };
   }
+}
+
+function sizeofExpr(n: CNode): number {
+  if (n.kind === "var" && n.resolved) return Math.max(fieldTypeSize(n.resolved.type), 1);
+  if (n.kind === "const" && typeof n.value === "string") return n.value.length + 1;
+  if (n.kind === "const") return 2; // default int-like
+  return 2;
 }
 
 function fieldTypeSize(t: CType): number {

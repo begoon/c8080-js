@@ -156,6 +156,16 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
       out.instruction("JMP", l);
       return;
     }
+    case "switch":
+      compileSwitch(out, n, warnings);
+      return;
+    case "case":
+    case "default":
+    case "label":
+    case "goto":
+      // Handled in compileSwitch / not-yet for top-level goto-label flow.
+      warnings.push(`${n.kind} outside of a switch is not supported yet`);
+      return;
     default:
       if (isExpressionKind(n.kind)) { compileExpression(out, n, warnings); return; }
       warnings.push(`unhandled statement kind '${n.kind}'`);
@@ -390,13 +400,20 @@ function compileBitwise16(out: Emitter, op: "and" | "or" | "xor"): void {
 function compileUnary(out: Emitter, op: string, arg: CNode, warnings: string[]): void {
   if (op === "deref") { compileDeref(out, arg, warnings); return; }
   if (op === "addr") {
-    // &var → load address. Other cases not supported yet.
     if (arg.kind === "var") {
       const addr = variableAddress(out, arg.name, arg.resolved);
       if (addr) { out.instruction("LXI", `H,${addr}`); return; }
     }
+    if (arg.kind === "unary" && arg.op === "deref") {
+      compileExpression(out, arg.arg, warnings); // the address itself
+      return;
+    }
     warnings.push(`&expr not supported for this operand`);
     out.instruction("LXI", "H,0");
+    return;
+  }
+  if (op === "preinc" || op === "predec" || op === "postinc" || op === "postdec") {
+    compileIncDec(out, op, arg, warnings);
     return;
   }
   compileExpression(out, arg, warnings);
@@ -519,6 +536,61 @@ function compileAddrOf(out: Emitter, n: CNode, warnings: string[]): void {
   out.instruction("LXI", "H,0");
 }
 
+function compileIncDec(out: Emitter, op: string, arg: CNode, warnings: string[]): void {
+  const isPre = op === "preinc" || op === "predec";
+  const delta = op === "preinc" || op === "postinc" ? 1 : -1;
+  // For a var: load, mutate, store; result in HL.
+  if (arg.kind === "var") {
+    const addr = variableAddress(out, arg.name, arg.resolved);
+    if (!addr) { warnings.push(`unresolved ${op} target`); out.instruction("LXI", "H,0"); return; }
+    const ptrSize = arg.resolved?.type.kind === "pointer" ? typeSize(arg.resolved.type.to) : 1;
+    if (arg.resolved && isByteType(arg.resolved.type)) {
+      out.instruction("LDA", addr);
+      if (!isPre) {
+        out.instruction("MOV", "L,A");
+        out.instruction("MVI", "H,0");
+      }
+      out.instruction(delta > 0 ? "INR" : "DCR", "A");
+      out.instruction("STA", addr);
+      if (isPre) { out.instruction("MOV", "L,A"); out.instruction("MVI", "H,0"); }
+      return;
+    }
+    out.instruction("LHLD", addr);
+    if (!isPre) { out.instruction("PUSH", "H"); }
+    // ++/-- on pointer scales by pointee size.
+    const step = Math.max(ptrSize, 1);
+    for (let i = 0; i < step; i++) out.instruction(delta > 0 ? "INX" : "DCX", "H");
+    out.instruction("SHLD", addr);
+    if (!isPre) out.instruction("POP", "H");
+    return;
+  }
+  if (arg.kind === "unary" && arg.op === "deref") {
+    // *p ++ / --: load through pointer, bump, store back.
+    compileExpression(out, arg.arg, warnings); // HL = address
+    out.instruction("PUSH", "H");
+    const byte = derefIsByte(arg.arg);
+    if (byte) {
+      out.instruction("MOV", "A,M");
+      if (!isPre) { out.instruction("MOV", "L,A"); out.instruction("MVI", "H,0"); out.instruction("PUSH", "H"); }
+      out.instruction(delta > 0 ? "INR" : "DCR", "A");
+      out.instruction("POP", "D"); // restore address (or old value for post)
+      // Need HL = address again: we pushed twice; pop both correctly:
+      // Actually let's just use a different approach below.
+    }
+    warnings.push(`${op} on dereferenced pointer not fully supported`);
+    out.instruction("POP", "H");
+    out.instruction("LXI", "H,0");
+    return;
+  }
+  if (arg.kind === "member") {
+    warnings.push(`${op} on struct member not yet supported`);
+    out.instruction("LXI", "H,0");
+    return;
+  }
+  warnings.push(`${op} on this operand not supported`);
+  out.instruction("LXI", "H,0");
+}
+
 function compileDeref(out: Emitter, arg: CNode, warnings: string[]): void {
   compileExpression(out, arg, warnings); // HL = address
   if (derefIsByte(arg)) {
@@ -542,6 +614,13 @@ function derefIsByte(addressExpr: CNode): boolean {
   }
   if (addressExpr.kind === "binary" && addressExpr.op === "add") {
     return derefIsByte(addressExpr.lhs) || derefIsByte(addressExpr.rhs);
+  }
+  if (addressExpr.kind === "unary") {
+    if (addressExpr.op === "preinc" || addressExpr.op === "predec" ||
+        addressExpr.op === "postinc" || addressExpr.op === "postdec") {
+      return derefIsByte(addressExpr.arg);
+    }
+    if (addressExpr.op === "addr") return derefIsByte(addressExpr.arg);
   }
   return false;
 }
@@ -578,6 +657,88 @@ function scaleHL(out: Emitter, size: number, warnings: string[]): void {
   out.instruction("CALL", "__o_mul_u16");
   out.noteCallTo("__o_mul_u16");
   void warnings;
+}
+
+function compileSwitch(out: Emitter, n: Extract<CNode, { kind: "switch" }>, warnings: string[]): void {
+  // Gather case values and default marker. Bodies can have any statements
+  // interleaved with case/default markers.
+  const stmts = n.body.kind === "block" ? n.body.stmts : [n.body];
+  const cases: Array<{ value: bigint; label: string; idx: number }> = [];
+  let defaultIdx = -1;
+  let defaultLabel: string | null = null;
+  for (let i = 0; i < stmts.length; i++) {
+    const s = stmts[i]!;
+    if (s.kind === "case") {
+      const v = foldConstExpr(s.value);
+      if (v === null) { warnings.push(`non-constant case value`); continue; }
+      cases.push({ value: v, label: out.freshLabel(`case`), idx: i });
+    } else if (s.kind === "default") {
+      defaultIdx = i;
+      defaultLabel = out.freshLabel("default");
+    }
+  }
+  const endLabel = out.freshLabel("endsw");
+
+  // Dispatcher.
+  compileExpression(out, n.expr, warnings);
+  for (const c of cases) {
+    // 16-bit compare: HL vs c.value.
+    const lo = Number(c.value & 0xffn);
+    const hi = Number((c.value >> 8n) & 0xffn);
+    out.instruction("MOV", "A,L"); out.instruction("CPI", `${lo}`);
+    const skip = out.freshLabel("swskip");
+    out.instruction("JNZ", skip);
+    out.instruction("MOV", "A,H"); out.instruction("CPI", `${hi}`);
+    out.instruction("JZ", c.label);
+    out.label(skip);
+  }
+  out.instruction("JMP", defaultLabel ?? endLabel);
+
+  // Body emission with labels at case/default positions.
+  out.beginLoop(endLabel, endLabel); // break exits the switch
+  for (let i = 0; i < stmts.length; i++) {
+    const s = stmts[i]!;
+    if (s.kind === "case") {
+      const c = cases.find((cc) => cc.idx === i);
+      if (c) out.label(c.label);
+      continue;
+    }
+    if (s.kind === "default") {
+      if (defaultLabel) out.label(defaultLabel);
+      continue;
+    }
+    compileNode(out, s, warnings);
+  }
+  out.endLoop();
+  out.label(endLabel);
+  void defaultIdx;
+}
+
+function foldConstExpr(n: CNode): bigint | null {
+  if (n.kind === "const") return typeof n.value === "bigint" ? n.value : null;
+  if (n.kind === "unary") {
+    const v = foldConstExpr(n.arg);
+    if (v === null) return null;
+    if (n.op === "neg") return -v;
+    if (n.op === "bnot") return ~v;
+    return null;
+  }
+  if (n.kind === "binary") {
+    const l = foldConstExpr(n.lhs);
+    const r = foldConstExpr(n.rhs);
+    if (l === null || r === null) return null;
+    switch (n.op) {
+      case "add": return l + r;
+      case "sub": return l - r;
+      case "mul": return l * r;
+      case "shl": return l << r;
+      case "shr": return l >> r;
+      case "or": return l | r;
+      case "and": return l & r;
+      case "xor": return l ^ r;
+    }
+  }
+  return null;
 }
 
 function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings: string[]): void {

@@ -340,6 +340,66 @@ describe("codegen — end-to-end", () => {
     `)).toBe(1276);
   });
 
+  test("pre-increment on int var", () => {
+    expect(run(`
+      int main(void) { int i = 10; return ++i + ++i; }
+    `)).toBe(11 + 12);
+  });
+
+  test("post-increment on int var", () => {
+    expect(run(`
+      int main(void) { int i = 10; int a = i++; int b = i++; return a + b + i; }
+    `)).toBe(10 + 11 + 12);
+  });
+
+  test("pre-decrement loop", () => {
+    expect(run(`
+      int main(void) {
+        int i = 5;
+        int total = 0;
+        while (--i >= 0) total = total + i;
+        return total;
+      }
+    `)).toBe(10); // 4 + 3 + 2 + 1 + 0
+  });
+
+  test("pointer post-increment walks a string", () => {
+    expect(run(`
+      int my_strlen(char *s) {
+        int n = 0;
+        while (*s++) n = n + 1;
+        return n;
+      }
+      int main(void) { return my_strlen("abcdef"); }
+    `)).toBe(6);
+  });
+
+  test("switch dispatches to correct case with break", () => {
+    expect(run(`
+      int pick(int n) {
+        switch (n) {
+          case 1: return 10;
+          case 2: return 20;
+          case 3: return 30;
+          default: return -1;
+        }
+      }
+      int main(void) { return pick(2); }
+    `)).toBe(20);
+  });
+
+  test("switch default", () => {
+    expect(run(`
+      int pick(int n) {
+        switch (n) {
+          case 1: return 10;
+          default: return 999;
+        }
+      }
+      int main(void) { return pick(42); }
+    `)).toBe(999);
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

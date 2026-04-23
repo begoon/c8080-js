@@ -54,15 +54,56 @@ async function main(): Promise<number> {
 
     const pp = new Preprocessor({ fs: new NodeFileSystem(), includeDirs, defines });
     for (const src of opts.sources) pp.openFile(src);
-    const program = new Parser(new Lex(pp)).parseProgram();
+    const parser = new Parser(new Lex(pp));
+    const program = parser.parseProgram();
+
+    // Follow __link("file.c") attributes — parse those files too and merge their
+    // functions/globals into the program.
+    const seen = new Set<string>(opts.sources.map((s) => pathResolve(s)));
+    const allFns = [...program.functions];
+    const allGlobals = [...program.globals];
+    const allLinks = new Map<string, { rel: string; sourceFile: string }>(parser.functionLinks);
+    // Functions already defined (have a body) — don't re-link.
+    const defined = new Set(program.functions.filter((f) => f.body !== null).map((f) => f.name));
+    // Collect called names from the AST.
+    const called = collectCalledNames(program);
+    const queue = [...called];
+    const considered = new Set<string>();
+    while (queue.length > 0) {
+      const name = queue.shift()!;
+      if (considered.has(name)) continue;
+      considered.add(name);
+      if (defined.has(name)) continue;
+      const link = allLinks.get(name);
+      if (!link) continue;
+      const resolved = resolveLinked(link.rel, link.sourceFile, includeDirs);
+      if (resolved === null || seen.has(resolved)) continue;
+      seen.add(resolved);
+      try {
+        const subPp = new Preprocessor({ fs: new NodeFileSystem(), includeDirs, defines });
+        subPp.openFile(resolved);
+        const subParser = new Parser(new Lex(subPp));
+        const subProgram = subParser.parseProgram();
+        for (const f of subProgram.functions) {
+          allFns.push(f);
+          if (f.body !== null) defined.add(f.name);
+        }
+        allGlobals.push(...subProgram.globals);
+        for (const [n, l] of subParser.functionLinks) if (!allLinks.has(n)) allLinks.set(n, l);
+        for (const n of collectCalledNames(subProgram)) queue.push(n);
+      } catch (e) {
+        console.error(`warning: __link for '${name}' ('${link.rel}') failed to parse: ${(e as Error).message}`);
+      }
+    }
+    const finalProgram = { ...program, functions: allFns, globals: allGlobals };
 
     if (opts.printTreeBeforeOpt) {
-      console.log(dumpProgram(program));
+      console.log(dumpProgram(finalProgram));
       return 0;
     }
 
     const org = opts.outputFormat === "rks" ? 0 : 0x0100;
-    const { asm, warnings } = compileProgram(program, { org });
+    const { asm, warnings } = compileProgram(finalProgram, { org });
     for (const w of warnings) console.error(`warning: ${w}`);
 
     const firstSource = opts.sources[0]!;
@@ -105,6 +146,49 @@ async function main(): Promise<number> {
     console.error("Compilation terminated due to error");
     return 1;
   }
+}
+
+function collectCalledNames(program: { functions: readonly { body: import("../src/frontend/ast.ts").CNode | null }[] }): Set<string> {
+  const names = new Set<string>();
+  const visit = (n: import("../src/frontend/ast.ts").CNode | null): void => {
+    if (!n) return;
+    if (n.kind === "call" && n.target.kind === "var") names.add(n.target.name);
+    for (const child of childNodes(n)) visit(child);
+  };
+  for (const f of program.functions) visit(f.body);
+  return names;
+}
+
+function childNodes(n: import("../src/frontend/ast.ts").CNode): import("../src/frontend/ast.ts").CNode[] {
+  switch (n.kind) {
+    case "block": return [...n.stmts];
+    case "if": return n.else ? [n.cond, n.then, n.else] : [n.cond, n.then];
+    case "while": return [n.cond, n.body];
+    case "do": return [n.body, n.cond];
+    case "for": return [n.init, n.cond, n.step, n.body].filter((x): x is import("../src/frontend/ast.ts").CNode => x !== null);
+    case "return": return n.value ? [n.value] : [];
+    case "assign": return [n.target, n.value];
+    case "unary": return [n.arg];
+    case "binary": return [n.lhs, n.rhs];
+    case "call": return [n.target, ...n.args];
+    case "member": return [n.object];
+    case "switch": return [n.expr, n.body];
+    case "case": return [n.value];
+    case "load": return [n.target];
+    case "pushPop": return [...n.regs, n.body];
+    default: return [];
+  }
+}
+
+function resolveLinked(rel: string, sourceFile: string, includeDirs: readonly string[]): string | null {
+  // Try relative to the declaring source file's directory first (c8080 semantics).
+  const localCandidate = pathResolve(dirname(sourceFile), rel);
+  if (existsSync(localCandidate)) return localCandidate;
+  for (const dir of includeDirs) {
+    const candidate = pathResolve(dir, rel);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 process.exit(await main());
