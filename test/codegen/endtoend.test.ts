@@ -572,6 +572,54 @@ describe("codegen — end-to-end", () => {
     `)).toBe(10 + 21 + 30);
   });
 
+  test("RPN calculator demo", () => {
+    // Pure-integer RPN evaluator: '+', '-', '*' operators, single digits.
+    // Program below parses a fixed expression string and prints the result.
+    const r = runWithOutput(`
+      void putint_u(int n) {
+        char buf[6];
+        int i = 0;
+        if (n == 0) { putchar('0'); return; }
+        while (n > 0) {
+          buf[i] = '0' + n % 10;
+          n = n / 10;
+          i = i + 1;
+        }
+        while (i > 0) { i = i - 1; putchar(buf[i]); }
+      }
+      int stack[16];
+      int top = 0;
+      void push(int v) { stack[top] = v; top = top + 1; }
+      int pop_(void) { top = top - 1; return stack[top]; }
+      int eval(char *expr) {
+        while (*expr != 0) {
+          char c = *expr;
+          if (c >= '0') {
+            if (c <= '9') { push(c - '0'); expr = expr + 1; continue; }
+          }
+          if (c == ' ') { expr = expr + 1; continue; }
+          int b = pop_();
+          int a = pop_();
+          if (c == '+') push(a + b);
+          if (c == '-') push(a - b);
+          if (c == '*') push(a * b);
+          expr = expr + 1;
+        }
+        return pop_();
+      }
+      int main(void) {
+        int r1 = eval("3 4 +");       // 7
+        int r2 = eval("5 6 * 2 +");   // 32
+        int r3 = eval("9 2 - 3 *");   // 21
+        putint_u(r1); putchar(' ');
+        putint_u(r2); putchar(' ');
+        putint_u(r3);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("7 32 21");
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —
