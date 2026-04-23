@@ -42,7 +42,11 @@ export type CNode =
   | { readonly kind: "continue"; readonly pos: SrcPos }
   | { readonly kind: "goto"; readonly pos: SrcPos; readonly label: string }
   | { readonly kind: "label"; readonly pos: SrcPos; readonly name: string }
-  | { readonly kind: "asm"; readonly pos: SrcPos; readonly text: string };
+  | { readonly kind: "asm"; readonly pos: SrcPos; readonly text: string }
+  | { readonly kind: "switch"; readonly pos: SrcPos; readonly expr: CNode; readonly body: CNode }
+  | { readonly kind: "case"; readonly pos: SrcPos; readonly value: CNode }
+  | { readonly kind: "default"; readonly pos: SrcPos }
+  | { readonly kind: "pushPop"; readonly pos: SrcPos; readonly regs: readonly CNode[]; readonly body: CNode };
 
 export type UnaryOp = "neg" | "not" | "bnot" | "addr" | "deref" | "preinc" | "predec" | "postinc" | "postdec";
 export type BinaryOp =
