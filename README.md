@@ -45,7 +45,7 @@ and merges its `puts` definition into the program. Demand-linking means
 | Comparisons | signed 16-bit `== != < <= > >=` |
 | Control flow | conditional jumps with fresh-labels; switch is a linear compare-and-branch dispatcher |
 | Structs | named fields with byte-offset layout; `.` and `->` member read/write for both byte and word fields |
-| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary. Mini `printf` (%d, %s, %c, %%) auto-linked when called |
+| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary. Mini `printf` / `sprintf` (%d, %s, %c, %%) auto-linked when called; they share an output-routing layer so either can be called without the other |
 | Preprocessor (full) | `#include` (both forms), `#define` (object- and function-like macros, variadic `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with C integer-expression evaluator + `defined(X)` + `__has_include(...)`, `#pragma once`, `#error`, CLI `-D` |
 | `__link("file.c")` | demand-linked: only files whose functions are reachable from the call graph are parsed. Parse failures of unreachable links are non-fatal |
 | Variadic (`...`) | callsite stashes extras into a `__va_args[]` buffer; used by the mini printf. Declared-param args still follow c8080's `__a_N_<func>` convention |
@@ -74,6 +74,8 @@ array of struct arr[i].x, RPN calculator "3 4 +"=7 etc.
 printf literal, printf %d (incl. 0, -42, INT16_MIN, INT16_MAX),
 printf mixed %s/%d/%c/%%, printf in a loop, printf unknown-spec passthrough,
 printf via char* format (not just literal), user printf overrides builtin,
+sprintf "x=42, y=hello" returning byte-count 13, sprintf reuses the buffer
+across calls, sprintf then printf (output routes back to stdout),
 struct-by-value assign (local=local, global=local, s=*p; 9-byte struct).
 ```
 

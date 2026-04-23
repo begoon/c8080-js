@@ -710,6 +710,46 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("n=7\n");
   });
 
+  test("sprintf: basic %d, %s into a buffer; return is byte count", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        char buf[32];
+        int n = sprintf(buf, "x=%d, y=%s", 42, "hello");
+        puts(buf);
+        return n;
+      }
+    `);
+    expect(r.output).toBe("x=42, y=hello");
+    expect(r.hl).toBe(13);
+  });
+
+  test("sprintf: multiple calls reuse the buffer correctly", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        char buf[16];
+        sprintf(buf, "a=%d", 1); puts(buf); putchar('|');
+        sprintf(buf, "b=%d", 22); puts(buf); putchar('|');
+        sprintf(buf, "c=%d", 333); puts(buf);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("a=1|b=22|c=333");
+  });
+
+  test("sprintf followed by printf: output redirection restores to stdout", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        char buf[16];
+        sprintf(buf, "silent=%d", 7);
+        printf("loud=%d", 99);
+        putchar(' ');
+        puts(buf);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("loud=99 silent=7");
+  });
+
   test("struct assign: local = local copies all fields", () => {
     expect(run(`
       struct Point { int x; int y; };

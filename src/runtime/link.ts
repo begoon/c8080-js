@@ -11,7 +11,7 @@ import { PRINTF_SOURCE } from "./printf.ts";
 type EmbeddedSource = { readonly provides: readonly string[]; readonly source: string };
 
 const EMBEDDED_SOURCES: readonly EmbeddedSource[] = [
-  { provides: ["printf", "__printf_putint"], source: PRINTF_SOURCE },
+  { provides: ["printf", "sprintf", "__printf_core", "__printf_putchar", "__printf_putint"], source: PRINTF_SOURCE },
 ];
 
 export function linkBuiltins(program: CProgram): CProgram {
