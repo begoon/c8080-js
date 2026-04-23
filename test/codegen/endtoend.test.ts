@@ -763,6 +763,42 @@ describe("codegen — end-to-end", () => {
     `)).toBe(30);
   });
 
+  test("nested struct: o.i.a chained member access", () => {
+    expect(run(`
+      struct Inner { int a; int b; };
+      struct Outer { struct Inner i; int c; };
+      int main(void) {
+        struct Outer o;
+        o.i.a = 1;
+        o.i.b = 2;
+        o.c = 3;
+        return o.i.a + o.i.b + o.c;
+      }
+    `)).toBe(6);
+  });
+
+  test("struct initializer: globals (int fields) with list init", () => {
+    expect(run(`
+      struct Point { int x; int y; };
+      struct Point p = { 100, 200 };
+      int main(void) { return p.x + p.y; }
+    `)).toBe(300);
+  });
+
+  test("struct array initializer: array of struct with char[] and int fields", () => {
+    const r = runWithOutput(`
+      struct Entry { char name[4]; int n; };
+      struct Entry entries[2] = { { "ab", 10 }, { "cd", 20 } };
+      int main(void) {
+        putchar(entries[0].name[0]);
+        putchar(entries[1].name[1]);
+        return entries[0].n + entries[1].n;
+      }
+    `);
+    expect(r.output).toBe("ad");
+    expect(r.hl).toBe(30);
+  });
+
   test("struct assign: covers mixed-size fields and globals", () => {
     const r = runWithOutput(`
       struct Big { int a; int b; int c; int d; char tag; };

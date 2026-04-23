@@ -524,6 +524,10 @@ function computeMemberAddress(out: Emitter, n: Extract<CNode, { kind: "member" }
 function compileMemberRead(out: Emitter, n: Extract<CNode, { kind: "member" }>, warnings: string[]): void {
   const field = computeMemberAddress(out, n, warnings);
   if (!field) return;
+  // Array-typed members decay to a pointer: HL already holds the address.
+  // Struct-typed members: the caller handles this (e.g. struct-copy via
+  // compileAddrOf); treat a standalone read as the address too.
+  if (field.type.kind === "array" || field.type.kind === "struct") return;
   if (isByteType(field.type)) {
     out.instruction("MOV", "A,M"); out.instruction("MOV", "L,A"); out.instruction("MVI", "H,0");
   } else {
@@ -803,6 +807,13 @@ function derefIsByte(addressExpr: CNode): boolean {
     }
     if (addressExpr.op === "addr") return derefIsByte(addressExpr.arg);
   }
+  if (addressExpr.kind === "member") {
+    const field = resolveField(addressExpr);
+    if (field) {
+      if (field.type.kind === "pointer") return isByteType(field.type.to);
+      if (field.type.kind === "array") return isByteType(field.type.of);
+    }
+  }
   return false;
 }
 
@@ -819,6 +830,13 @@ function pointeeByteSize(n: CNode): number {
   }
   if (n.kind === "binary" && n.op === "add") {
     return pointeeByteSize(n.lhs) || pointeeByteSize(n.rhs);
+  }
+  if (n.kind === "member") {
+    const field = resolveField(n);
+    if (field) {
+      if (field.type.kind === "pointer") return typeSize(field.type.to);
+      if (field.type.kind === "array") return typeSize(field.type.of);
+    }
   }
   return 0;
 }
@@ -1347,7 +1365,28 @@ function emitInitializerData(out: Emitter, type: CType, init: InitializerValue):
     if (total > emitted) out.directiveRaw(`DS   ${total - emitted}`);
     return;
   }
-  // Non-array list initializer: emit each element as a bigint if constant.
+  if (type.kind === "struct" && type.fields) {
+    // Walk fields in declared order; each one consumes one item. Missing
+    // items are zero-padded; extra items are dropped.
+    let emitted = 0;
+    const items = init.items;
+    for (let i = 0; i < type.fields.length; i++) {
+      const f = type.fields[i]!;
+      if (f.offset > emitted) {
+        out.directiveRaw(`DS   ${f.offset - emitted}`);
+        emitted = f.offset;
+      }
+      if (i < items.length) {
+        emitInitializerData(out, f.type, items[i]!);
+      } else {
+        out.directiveRaw(`DS   ${Math.max(typeSize(f.type), 1)}`);
+      }
+      emitted += Math.max(typeSize(f.type), 1);
+    }
+    if (type.size > emitted) out.directiveRaw(`DS   ${type.size - emitted}`);
+    return;
+  }
+  // Fallback: emit each element as a bigint if constant.
   for (const item of init.items) {
     if (item.kind === "expr") {
       const v = foldConst(item.expr);

@@ -184,7 +184,12 @@ export class Tokenizer {
         if (this.peek() === 0x2f || this.peek() === 0x3d) this.cursor++;
         return "operator";
       case 0x2e: // .
-        if (this.peek() === 0x2e || this.peek(1) === 0x2e) this.cursor += 2;
+        // `...` (ellipsis) — three consecutive dots. The reference c8080
+        // tokenizer has a `||` typo here (ctokenizer.cpp:202) that makes it
+        // also match `.X.` for any single char X, so e.g. `o.i.a` tokenises
+        // as `o` `.i.` `a` and won't parse. We diverge with `&&` to enable
+        // nested struct member access.
+        if (this.peek() === 0x2e && this.peek(1) === 0x2e) this.cursor += 2;
         return "operator";
       case 0x2b: // +
         if (this.peek() === 0x2b || this.peek() === 0x3d) this.cursor++;
