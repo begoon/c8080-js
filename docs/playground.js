@@ -3091,6 +3091,9 @@ function compileNode(out, n, warnings) {
       return;
   }
 }
+function formatOperands(operands) {
+  return operands.replace(/,\s*/g, ", ");
+}
 function indentAsmBlock(text) {
   return text.split(`
 `).map((line) => {
@@ -4065,7 +4068,8 @@ class Emitter {
     this.lastInstruction = "";
   }
   instruction(op, operands) {
-    this.lines.push(operands ? `    ${op.padEnd(6)}${operands}` : `    ${op}`);
+    const formatted = operands ? formatOperands(operands) : undefined;
+    this.lines.push(formatted ? `    ${op.padEnd(6)}${formatted}` : `    ${op}`);
     this.lastInstruction = op.toUpperCase();
   }
   raw(text) {
@@ -5448,14 +5452,24 @@ function hex4(n) {
   return n.toString(16).padStart(4, "0").toUpperCase();
 }
 function formatBytes(bytes, origin) {
+  let firstNonZero = -1;
+  let lastNonZero = -1;
+  for (let i = 0;i < bytes.length; i++) {
+    if (bytes[i] !== 0) {
+      if (firstNonZero < 0)
+        firstNonZero = i;
+      lastNonZero = i;
+    }
+  }
+  if (firstNonZero < 0)
+    return "(all zero)";
+  const start = firstNonZero & ~15;
+  const end = Math.min(bytes.length, (lastNonZero & ~15) + 16);
   const lines = [];
-  for (let i = 0;i < bytes.length; i += 16) {
-    const addr = origin + i;
-    if (bytes.slice(i, i + 16).every((b) => b === 0))
-      continue;
+  for (let i = start;i < end; i += 16) {
     const row = [...bytes.slice(i, i + 16)].map(hex2).join(" ");
     const ascii = [...bytes.slice(i, i + 16)].map((b) => b >= 32 && b < 127 ? String.fromCharCode(b) : ".").join("");
-    lines.push(`${hex4(addr)}  ${row.padEnd(47)}  ${ascii}`);
+    lines.push(`${hex4(origin + i)}  ${row.padEnd(47)}  ${ascii}`);
   }
   return lines.join(`
 `);

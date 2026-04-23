@@ -63,15 +63,28 @@ function hex2(n: number): string { return n.toString(16).padStart(2, "0").toUppe
 function hex4(n: number): string { return n.toString(16).padStart(4, "0").toUpperCase(); }
 
 function formatBytes(bytes: Uint8Array, origin: number): string {
+  // Find the first non-zero byte and the last non-zero byte so we can trim
+  // leading/trailing zero padding (e.g. the CP/M PSP area before 0x0100)
+  // without dropping rows that happen to be mostly zero but contain a NUL
+  // terminator or similar meaningful byte in the middle of the data span.
+  let firstNonZero = -1;
+  let lastNonZero = -1;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] !== 0) {
+      if (firstNonZero < 0) firstNonZero = i;
+      lastNonZero = i;
+    }
+  }
+  if (firstNonZero < 0) return "(all zero)";
+  const start = firstNonZero & ~0xf;          // round down to 16-byte row
+  const end = Math.min(bytes.length, (lastNonZero & ~0xf) + 16);
   const lines: string[] = [];
-  for (let i = 0; i < bytes.length; i += 16) {
-    const addr = origin + i;
-    if (bytes.slice(i, i + 16).every((b) => b === 0)) continue;
+  for (let i = start; i < end; i += 16) {
     const row = [...bytes.slice(i, i + 16)].map(hex2).join(" ");
     const ascii = [...bytes.slice(i, i + 16)]
       .map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : "."))
       .join("");
-    lines.push(`${hex4(addr)}  ${row.padEnd(47)}  ${ascii}`);
+    lines.push(`${hex4(origin + i)}  ${row.padEnd(47)}  ${ascii}`);
   }
   return lines.join("\n");
 }

@@ -16,7 +16,7 @@ describe("codegen — minimal cases", () => {
   test("function returning integer constant", () => {
     const asm = compile(`int main() { return 42; }`);
     expect(asm).toContain("main:");
-    expect(asm).toContain("LXI   H,42");
+    expect(asm).toContain("LXI   H, 42");
     expect(asm).toContain("RET");
   });
 
@@ -28,13 +28,13 @@ describe("codegen — minimal cases", () => {
 
   test("constant folding for add", () => {
     const asm = compile(`int f() { return 1 + 2; }`);
-    expect(asm).toContain("LXI   H,3");
+    expect(asm).toContain("LXI   H, 3");
   });
 
   test("non-folded add emits DAD", () => {
     const asm = compile(`int f() { return 100 + 200 + 300; }`);
     // (100+200) folds to 300, then 300 + 300 folds to 600.
-    expect(asm).toContain("LXI   H,600");
+    expect(asm).toContain("LXI   H, 600");
   });
 
   test("binary subtract", () => {

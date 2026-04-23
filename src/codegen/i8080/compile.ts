@@ -181,6 +181,14 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
   }
 }
 
+function formatOperands(operands: string): string {
+  // Add a space after every comma that doesn't already have one, so operand
+  // pairs read as `H, msg` instead of `H,msg`. Runs only over the operand
+  // portion of codegen-emitted instructions, so commas inside user-written
+  // inline-asm (emitted via out.raw) are left alone.
+  return operands.replace(/,\s*/g, ", ");
+}
+
 function indentAsmBlock(text: string): string {
   // Inline-asm bodies come through verbatim — prepend 4 spaces to each
   // non-blank line so they align with the rest of the emitted asm.
@@ -1107,7 +1115,8 @@ class Emitter {
   blank(): void { this.lines.push(""); }
   label(name: string): void { this.lines.push(`${name}:`); this.lastInstruction = ""; }
   instruction(op: string, operands?: string): void {
-    this.lines.push(operands ? `    ${op.padEnd(6)}${operands}` : `    ${op}`);
+    const formatted = operands ? formatOperands(operands) : undefined;
+    this.lines.push(formatted ? `    ${op.padEnd(6)}${formatted}` : `    ${op}`);
     this.lastInstruction = op.toUpperCase();
   }
   raw(text: string): void { this.lines.push(text); this.lastInstruction = ""; }
