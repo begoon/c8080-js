@@ -202,6 +202,46 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("123");
   });
 
+  test("int array: read/write with element-size scaling", () => {
+    expect(run(`
+      int arr[5];
+      int main(void) {
+        arr[0] = 10;
+        arr[1] = 20;
+        arr[2] = 30;
+        arr[3] = 40;
+        arr[4] = 50;
+        return arr[0] + arr[2] + arr[4];
+      }
+    `)).toBe(90);
+  });
+
+  test("string reversal in place", () => {
+    const r = runWithOutput(`
+      char buf[16];
+      void reverse(char *s, int len) {
+        int i = 0;
+        int j = len - 1;
+        while (i < j) {
+          char t;
+          t = s[i];
+          s[i] = s[j];
+          s[j] = t;
+          i = i + 1;
+          j = j - 1;
+        }
+      }
+      int main(void) {
+        buf[0] = 'h'; buf[1] = 'e'; buf[2] = 'l'; buf[3] = 'l'; buf[4] = 'o';
+        buf[5] = 0;
+        reverse(buf, 5);
+        puts(buf);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("olleh");
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

@@ -260,6 +260,11 @@ function compileBinary(
   compileExpression(out, lhs, warnings);
   out.instruction("PUSH", "H");
   compileExpression(out, rhs, warnings);
+  // Scale RHS if this is pointer arithmetic.
+  if (op === "add" || op === "sub") {
+    const ptrSize = pointeeByteSize(lhs);
+    if (ptrSize > 1) scaleHL(out, ptrSize, warnings);
+  }
   out.instruction("POP", "D");
   switch (op) {
     case "add": out.instruction("DAD", "D"); return;
@@ -447,6 +452,35 @@ function derefIsByte(addressExpr: CNode): boolean {
 function isByteType(t: CType): boolean {
   if (t.kind !== "base") return false;
   return t.base === "char" || t.base === "schar" || t.base === "uchar" || t.base === "bool";
+}
+
+function pointeeByteSize(n: CNode): number {
+  if (n.kind === "var" && n.resolved) {
+    const t = n.resolved.type;
+    if (t.kind === "pointer") return typeSize(t.to);
+    if (t.kind === "array") return typeSize(t.of);
+  }
+  if (n.kind === "binary" && n.op === "add") {
+    return pointeeByteSize(n.lhs) || pointeeByteSize(n.rhs);
+  }
+  return 0;
+}
+
+function scaleHL(out: Emitter, size: number, warnings: string[]): void {
+  if (size === 1 || size === 0) return;
+  // Power-of-two: shift left.
+  let log = 0;
+  let s = size;
+  while (s > 1 && (s & 1) === 0) { log++; s >>= 1; }
+  if (s === 1) {
+    for (let i = 0; i < log; i++) out.instruction("DAD", "H");
+    return;
+  }
+  // Non-power-of-two: multiply by size.
+  out.instruction("LXI", `D,${size}`);
+  out.instruction("CALL", "__o_mul_u16");
+  out.noteCallTo("__o_mul_u16");
+  void warnings;
 }
 
 function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings: string[]): void {
