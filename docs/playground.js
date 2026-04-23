@@ -5435,6 +5435,26 @@ function wrapRk86File(payload, start, end, format2, trailerPadding = 0) {
 }
 if (false) {}
 
+// src/formats/rks.ts
+function wrapRks(payload) {
+  if (payload.length === 0)
+    return new Uint8Array(0);
+  const end = payload.length - 1;
+  let sum = 0;
+  for (let i = 0;i < payload.length - 1; i++)
+    sum = sum + payload[i] * 257 & 65535;
+  const crc = (sum & 65280) + (sum + payload[payload.length - 1] & 255) & 65535;
+  const out = new Uint8Array(payload.length + 6);
+  out[0] = 0;
+  out[1] = 0;
+  out[2] = end & 255;
+  out[3] = end >> 8 & 255;
+  out.set(payload, 4);
+  out[out.length - 2] = crc & 255;
+  out[out.length - 1] = crc >> 8 & 255;
+  return out;
+}
+
 // docs/playground.ts
 var DEFAULT_SOURCE = `// c8080 playground — edit below, recompiles on every keystroke.
 // "Run" assembles an .rk tape file and boots it on the rk86.ru emulator.
@@ -5543,7 +5563,54 @@ function init() {
   const statusEl = document.getElementById("status");
   const bytesEl = document.getElementById("bytes");
   const runBtn = document.getElementById("run");
+  const downloadBtn = document.getElementById("download");
+  const downloadFmt = document.getElementById("download-format");
   let latest = null;
+  const triggerDownload = (filename, blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  downloadBtn.addEventListener("click", () => {
+    const fmt = downloadFmt.value;
+    const name = "c8080-playground";
+    if (fmt === "c") {
+      triggerDownload(`${name}.c`, new Blob([srcEl.value], { type: "text/plain" }));
+      return;
+    }
+    if (!latest)
+      return;
+    if (fmt === "asm") {
+      triggerDownload(`${name}.asm`, new Blob([latest.asm], { type: "text/plain" }));
+      return;
+    }
+    if (!latest.bytes || latest.error)
+      return;
+    const { bytes, rkStart, rkEnd } = latest;
+    let out;
+    switch (fmt) {
+      case "bin":
+        out = bytes;
+        break;
+      case "rks":
+        out = wrapRks(bytes);
+        break;
+      case "rk":
+      case "rkr":
+      case "pki":
+      case "gam":
+        out = wrapRk86File(bytes, rkStart, rkEnd, fmt);
+        break;
+      default:
+        return;
+    }
+    triggerDownload(`${name}.${fmt}`, new Blob([out], { type: "application/octet-stream" }));
+  });
   const saved = localStorage.getItem(STORAGE_KEY);
   srcEl.value = saved ?? DEFAULT_SOURCE;
   runBtn.addEventListener("click", () => {

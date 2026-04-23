@@ -47,24 +47,48 @@ h1 {
   opacity: 0.75;
 }
 
-button.primary {
+button {
   font: inherit;
   font-size: 0.85rem;
-  background: #2e7d32;
-  color: #fff;
-  border: 1px solid #1b5e20;
+  background: #3a3b40;
+  color: #d7d7d7;
+  border: 1px solid #4a4b50;
   padding: 0.3rem 0.7rem;
   border-radius: 4px;
   cursor: pointer;
 }
 
+button:hover:not(:disabled) { background: #44454a; }
+
+button.primary {
+  background: #2e7d32;
+  color: #fff;
+  border-color: #1b5e20;
+}
+
 button.primary:hover:not(:disabled) { background: #388e3c; }
 button.primary:active:not(:disabled) { background: #1b5e20; }
+button:disabled,
 button.primary:disabled {
-  background: #3a3b40;
+  background: #2a2b30;
   color: #888;
   border-color: #2a2b30;
   cursor: not-allowed;
+}
+
+.toolbar select {
+  font: inherit;
+  font-size: 0.85rem;
+  background: #2a2c31;
+  color: #d7d7d7;
+  border: 1px solid #4a4b50;
+  padding: 0.25rem 0.35rem;
+  border-radius: 4px;
+}
+
+.toolbar .muted {
+  font-size: 0.8rem;
+  opacity: 0.55;
 }
 
 main {

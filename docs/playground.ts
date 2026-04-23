@@ -7,6 +7,7 @@ import { Preprocessor } from "../src/frontend/preprocessor.ts";
 import { Lex } from "../src/frontend/lex.ts";
 import { Parser } from "../src/frontend/parser.ts";
 import { asm as assemble, AsmError, wrapRk86File } from "asm8080";
+import { wrapRks } from "../src/formats/rks.ts";
 
 type Result = {
   asm: string;
@@ -134,8 +135,48 @@ function init(): void {
   const statusEl = document.getElementById("status") as HTMLDivElement;
   const bytesEl = document.getElementById("bytes") as HTMLPreElement;
   const runBtn = document.getElementById("run") as HTMLButtonElement;
+  const downloadBtn = document.getElementById("download") as HTMLButtonElement;
+  const downloadFmt = document.getElementById("download-format") as HTMLSelectElement;
 
   let latest: Result | null = null;
+
+  const triggerDownload = (filename: string, blob: Blob): void => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  downloadBtn.addEventListener("click", () => {
+    const fmt = downloadFmt.value;
+    const name = "c8080-playground";
+    if (fmt === "c") {
+      triggerDownload(`${name}.c`, new Blob([srcEl.value], { type: "text/plain" }));
+      return;
+    }
+    if (!latest) return;
+    if (fmt === "asm") {
+      triggerDownload(`${name}.asm`, new Blob([latest.asm], { type: "text/plain" }));
+      return;
+    }
+    if (!latest.bytes || latest.error) return;
+    const { bytes, rkStart, rkEnd } = latest;
+    let out: Uint8Array;
+    switch (fmt) {
+      case "bin": out = bytes; break;
+      case "rks": out = wrapRks(bytes); break;
+      case "rk":
+      case "rkr":
+      case "pki":
+      case "gam": out = wrapRk86File(bytes, rkStart, rkEnd, fmt); break;
+      default: return;
+    }
+    triggerDownload(`${name}.${fmt}`, new Blob([out as BlobPart], { type: "application/octet-stream" }));
+  });
 
   const saved = localStorage.getItem(STORAGE_KEY);
   srcEl.value = saved ?? DEFAULT_SOURCE;
