@@ -186,6 +186,18 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
     case "var": {
       const addr = variableAddress(out, n.name, n.resolved);
       if (addr === null) { warnings.push(`unresolved variable '${n.name}'`); out.instruction("LXI", "H,0"); return; }
+      // Arrays decay to pointers: load the address, not the contents.
+      if (n.resolved && n.resolved.type.kind === "array") {
+        out.instruction("LXI", `H,${addr}`);
+        return;
+      }
+      // Byte-sized variables: LDA + zero-extend.
+      if (n.resolved && isByteType(n.resolved.type)) {
+        out.instruction("LDA", addr);
+        out.instruction("MOV", "L,A");
+        out.instruction("MVI", "H,0");
+        return;
+      }
       out.instruction("LHLD", addr);
       return;
     }
@@ -199,14 +211,35 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
       compileCall(out, n, warnings);
       return;
     case "assign": {
-      compileExpression(out, n.value, warnings);
       if (n.target.kind === "var") {
+        compileExpression(out, n.value, warnings);
         const addr = variableAddress(out, n.target.name, n.target.resolved);
-        if (addr !== null) out.instruction("SHLD", addr);
-        else warnings.push(`unresolved assignment target '${n.target.name}'`);
-      } else {
-        warnings.push(`unsupported assignment target: ${n.target.kind}`);
+        if (addr === null) { warnings.push(`unresolved assignment target '${n.target.name}'`); return; }
+        if (n.target.resolved && isByteType(n.target.resolved.type)) {
+          out.instruction("MOV", "A,L");
+          out.instruction("STA", addr);
+        } else {
+          out.instruction("SHLD", addr);
+        }
+        return;
       }
+      if (n.target.kind === "unary" && n.target.op === "deref") {
+        // *addr = value
+        compileExpression(out, n.target.arg, warnings); // HL = address
+        out.instruction("PUSH", "H");
+        compileExpression(out, n.value, warnings);     // HL = value
+        out.instruction("POP", "D");                    // DE = address
+        out.instruction("XCHG");                        // HL = address, DE = value
+        if (derefIsByte(n.target.arg)) {
+          out.instruction("MOV", "M,E");
+        } else {
+          out.instruction("MOV", "M,E");
+          out.instruction("INX", "H");
+          out.instruction("MOV", "M,D");
+        }
+        return;
+      }
+      warnings.push(`unsupported assignment target: ${n.target.kind}`);
       return;
     }
     default:
@@ -343,6 +376,17 @@ function compileBitwise16(out: Emitter, op: "and" | "or" | "xor"): void {
 }
 
 function compileUnary(out: Emitter, op: string, arg: CNode, warnings: string[]): void {
+  if (op === "deref") { compileDeref(out, arg, warnings); return; }
+  if (op === "addr") {
+    // &var → load address. Other cases not supported yet.
+    if (arg.kind === "var") {
+      const addr = variableAddress(out, arg.name, arg.resolved);
+      if (addr) { out.instruction("LXI", `H,${addr}`); return; }
+    }
+    warnings.push(`&expr not supported for this operand`);
+    out.instruction("LXI", "H,0");
+    return;
+  }
   compileExpression(out, arg, warnings);
   switch (op) {
     case "neg":
@@ -371,6 +415,38 @@ function compileUnary(out: Emitter, op: string, arg: CNode, warnings: string[]):
       out.instruction("LXI", "H,0");
       return;
   }
+}
+
+function compileDeref(out: Emitter, arg: CNode, warnings: string[]): void {
+  compileExpression(out, arg, warnings); // HL = address
+  if (derefIsByte(arg)) {
+    out.instruction("MOV", "A,M");
+    out.instruction("MOV", "L,A");
+    out.instruction("MVI", "H,0");
+  } else {
+    out.instruction("MOV", "E,M");
+    out.instruction("INX", "H");
+    out.instruction("MOV", "D,M");
+    out.instruction("XCHG");
+  }
+}
+
+function derefIsByte(addressExpr: CNode): boolean {
+  // Inspect the expression structure to decide whether *p is a byte load.
+  if (addressExpr.kind === "var" && addressExpr.resolved) {
+    const t = addressExpr.resolved.type;
+    if (t.kind === "pointer") return isByteType(t.to);
+    if (t.kind === "array") return isByteType(t.of);
+  }
+  if (addressExpr.kind === "binary" && addressExpr.op === "add") {
+    return derefIsByte(addressExpr.lhs) || derefIsByte(addressExpr.rhs);
+  }
+  return false;
+}
+
+function isByteType(t: CType): boolean {
+  if (t.kind !== "base") return false;
+  return t.base === "char" || t.base === "schar" || t.base === "uchar" || t.base === "bool";
 }
 
 function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings: string[]): void {
@@ -532,18 +608,25 @@ class Emitter {
     this.label("__static_stack");
     let offset = 0;
     for (const frame of this.frames) {
-      const slotBytes = frame.func.params.length * 2 + frame.func.locals.length * 2;
-      if (slotBytes > 0) {
-        this.directive(`DS   ${slotBytes}  ; ${frame.func.name}`);
+      // Params are always 2 bytes (int/pointer) per c8080's calling convention.
+      // Locals use their real size.
+      let frameBytes = frame.func.params.length * 2;
+      const localOffsets: number[] = [];
+      for (const l of frame.func.locals) {
+        localOffsets.push(frameBytes);
+        frameBytes += Math.max(typeSize(l.type), 1);
+      }
+      if (frameBytes > 0) {
+        this.directive(`DS   ${frameBytes}  ; ${frame.func.name}`);
       }
       this.lines.push(`${frameAddr(frame.func.name)}: EQU __static_stack+${offset}`);
       for (let i = 0; i < frame.func.params.length; i++) {
         this.lines.push(`${paramAddr(frame.func.name, i + 1)}: EQU ${frameAddr(frame.func.name)}+${i * 2}`);
       }
       for (let i = 0; i < frame.func.locals.length; i++) {
-        this.lines.push(`${localAddr(frame.func.name, i)}: EQU ${frameAddr(frame.func.name)}+${(frame.func.params.length + i) * 2}`);
+        this.lines.push(`${localAddr(frame.func.name, i)}: EQU ${frameAddr(frame.func.name)}+${localOffsets[i]}`);
       }
-      offset += slotBytes;
+      offset += frameBytes;
     }
   }
 
@@ -553,7 +636,7 @@ class Emitter {
     if (unique.size === 0 && this.strings.size === 0) return;
     this.blank();
     for (const [name, v] of unique) {
-      const size = typeSize(v.type);
+      const size = Math.max(typeSize(v.type), 1);
       this.label(name);
       this.directive(`DS   ${size}`);
     }

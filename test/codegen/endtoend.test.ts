@@ -159,6 +159,36 @@ describe("codegen — end-to-end", () => {
     `)).toBe(1024);
   });
 
+  test("byte array: read and write via subscript", () => {
+    const r = runWithOutput(`
+      char buf[5];
+      int main(void) {
+        buf[0] = 'a';
+        buf[1] = 'b';
+        buf[2] = 'c';
+        buf[3] = 'd';
+        buf[4] = 'e';
+        putchar(buf[3]);
+        putchar(buf[1]);
+        putchar(buf[0]);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("dba");
+  });
+
+  test("walk a C string with a char pointer", () => {
+    const r = runWithOutput(`
+      int strlen_(char *s) {
+        int n = 0;
+        while (*s != 0) { n = n + 1; s = s + 1; }
+        return n;
+      }
+      int main(void) { return strlen_("hello!"); }
+    `);
+    expect(r.hl).toBe(6);
+  });
+
   test("print digit sequence via /,%", () => {
     const r = runWithOutput(`
       int main(void) {
