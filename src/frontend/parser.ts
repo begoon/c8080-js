@@ -130,7 +130,7 @@ export class Parser {
     pos: SrcPos, ts: TypeSpec, retStars: number, name: string, functions: CFunction[],
   ): void {
     const retType = this.wrapPointers(ts.base, retStars);
-    const params = this.parseParamList();
+    const { params, variadic } = this.parseParamList();
     this.lastDeclaredName = name;
     this.skipTrailingAttributes();
     this.lastDeclaredName = null;
@@ -143,6 +143,7 @@ export class Parser {
       name, type: funcType, params,
       locals: [], body: null,
       storage: ts.storage === "stack" ? "stack" : "global",
+      variadic,
       pos,
     };
 
@@ -169,17 +170,18 @@ export class Parser {
     this.symbols.declareFunction(finished); // replace with the version that has body+locals
   }
 
-  private parseParamList(): CVariable[] {
+  private parseParamList(): { params: CVariable[]; variadic: boolean } {
     const params: CVariable[] = [];
-    if (this.lex.ifText(")")) return params;
+    let variadic = false;
+    if (this.lex.ifText(")")) return { params, variadic };
     // (void) alone means "no params"; (void *p) means one void-pointer param.
     if (this.lex.peekIdent("void") && this.lex.peekText(")", 1)) {
       this.lex.advance();
       this.lex.advance();
-      return params;
+      return { params, variadic };
     }
     for (;;) {
-      if (this.lex.ifText("...")) break; // variadic marker
+      if (this.lex.ifText("...")) { variadic = true; break; }
       const pos = this.pos();
       const ts = this.parseDeclSpec();
       const stars = this.parsePointers();
@@ -199,7 +201,7 @@ export class Parser {
       if (!this.lex.ifText(",")) break;
     }
     this.lex.needText(")");
-    return params;
+    return { params, variadic };
   }
 
   // ---------- types ----------
@@ -807,10 +809,10 @@ export class Parser {
       return { kind: "const", pos, type: { kind: "base", base: "int" }, value };
     }
     if (this.lex.kind === "string2") {
-      let raw = this.lex.text.slice(1, -1);
+      let raw = decodeStringLiteral(this.lex.text);
       this.lex.advance();
       while (this.lex.kind === "string2") {
-        raw += this.lex.text.slice(1, -1);
+        raw += decodeStringLiteral(this.lex.text);
         this.lex.advance();
       }
       return { kind: "const", pos, type: { kind: "pointer", to: { kind: "base", base: "char" } }, value: raw };
@@ -935,6 +937,45 @@ const UNARY_OPS: Array<[string, UnaryOp]> = [
   ["-", "neg"], ["!", "not"], ["~", "bnot"],
   ["*", "deref"], ["&", "addr"],
 ];
+
+function decodeStringLiteral(text: string): string {
+  // text includes the surrounding double quotes.
+  const inner = text.slice(1, -1);
+  let out = "";
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i]!;
+    if (c !== "\\" || i + 1 >= inner.length) { out += c; continue; }
+    const esc = inner[++i]!;
+    switch (esc) {
+      case "n": out += "\n"; break;
+      case "r": out += "\r"; break;
+      case "t": out += "\t"; break;
+      case "0": out += "\0"; break;
+      case "\\": out += "\\"; break;
+      case "'": out += "'"; break;
+      case '"': out += '"'; break;
+      case "a": out += "\x07"; break;
+      case "b": out += "\b"; break;
+      case "f": out += "\f"; break;
+      case "v": out += "\v"; break;
+      case "x": {
+        let hex = "";
+        while (i + 1 < inner.length && /[0-9a-fA-F]/.test(inner[i + 1]!)) hex += inner[++i];
+        out += String.fromCharCode(parseInt(hex, 16));
+        break;
+      }
+      default:
+        if (esc >= "0" && esc <= "7") {
+          let oct = esc;
+          while (i + 1 < inner.length && inner[i + 1]! >= "0" && inner[i + 1]! <= "7" && oct.length < 3) oct += inner[++i];
+          out += String.fromCharCode(parseInt(oct, 8));
+        } else {
+          out += esc;
+        }
+    }
+  }
+  return out;
+}
 
 function decodeCharLiteral(text: string): bigint {
   // text includes the surrounding single quotes.

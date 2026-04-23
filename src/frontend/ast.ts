@@ -85,6 +85,7 @@ export type CFunction = {
   readonly locals: readonly CVariable[];
   readonly body: CNode | null;
   readonly storage: "global" | "stack";
+  readonly variadic: boolean;
   readonly pos: SrcPos;
 };
 

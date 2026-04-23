@@ -640,4 +640,73 @@ describe("codegen — end-to-end", () => {
       int main(void) { return fib(10); }
     `)).toBe(55);
   });
+
+  test("printf: plain literal passes through as puts", () => {
+    const r = runWithOutput(`
+      int main(void) { printf("hello, world"); return 0; }
+    `);
+    expect(r.output).toBe("hello, world");
+  });
+
+  test("printf: %d on 0, 1, positive, negative, and INT16_MIN", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        printf("%d ", 0);
+        printf("%d ", 1);
+        printf("%d ", 12345);
+        printf("%d ", 0 - 42);
+        printf("%d ", 0 - 32768);
+        printf("%d", 32767);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("0 1 12345 -42 -32768 32767");
+  });
+
+  test("printf: mixed %s %d %c %% in a single call", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        printf("hi %s, n=%d, c=%c %% end", "world", 42, 'A');
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("hi world, n=42, c=A % end");
+  });
+
+  test("printf: called inside a loop with two args each", () => {
+    const r = runWithOutput(`
+      int main(void) {
+        int i;
+        for (i = 1; i <= 3; i = i + 1) printf("i=%d sq=%d\\n", i, i * i);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("i=1 sq=1\ni=2 sq=4\ni=3 sq=9\n");
+  });
+
+  test("printf: unknown conversion passes through", () => {
+    const r = runWithOutput(`
+      int main(void) { printf("x=%q"); return 0; }
+    `);
+    expect(r.output).toBe("x=%q");
+  });
+
+  test("printf: user-defined printf overrides the builtin", () => {
+    const r = runWithOutput(`
+      int printf(char *fmt) { puts("user!"); return 0; }
+      int main(void) { printf("ignored"); return 0; }
+    `);
+    expect(r.output).toBe("user!");
+  });
+
+  test("printf: format string via pointer works (runtime-driven, not codegen-inlined)", () => {
+    const r = runWithOutput(`
+      char *fmt = "n=%d\\n";
+      int main(void) {
+        printf(fmt, 7);
+        return 0;
+      }
+    `);
+    expect(r.output).toBe("n=7\n");
+  });
 });

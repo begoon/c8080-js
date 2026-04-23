@@ -1,4 +1,5 @@
 import type { CFunction, CNode, CProgram, CType, CVariable, InitializerValue, StructField } from "../../frontend/ast.ts";
+import { linkBuiltins } from "../../runtime/link.ts";
 
 export type CompileResult = {
   readonly asm: string;
@@ -6,6 +7,7 @@ export type CompileResult = {
 };
 
 export function compileProgram(p: CProgram, options: { org?: number } = {}): CompileResult {
+  p = linkBuiltins(p);
   const out = new Emitter();
   const warnings: string[] = [];
   const org = options.org ?? 0x0100;
@@ -19,6 +21,7 @@ export function compileProgram(p: CProgram, options: { org?: number } = {}): Com
     out.blank();
   }
 
+  for (const f of p.functions) out.recordFunction(f);
   for (const g of p.globals) out.declareGlobal(g);
 
   const userFuncNames = new Set(p.functions.filter((f) => f.body !== null).map((f) => f.name));
@@ -859,6 +862,28 @@ function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings
   const name = n.target.name;
   out.noteCallTo(name);
   const args = n.args;
+  const callee = out.findFunction(name);
+  if (callee && callee.variadic) {
+    // Variadic: declared params use standard __a_K slots + HL for the last declared.
+    // Extra args go into a contiguous global `__va_args` buffer (word per slot).
+    const declared = callee.params.length;
+    // First, stash extras into __va_args (left-to-right so argument order matches).
+    for (let i = declared; i < args.length; i++) {
+      compileExpression(out, args[i]!, warnings);
+      out.instruction("SHLD", vaArgAddr(i - declared));
+    }
+    out.noteVaArgsUsed(Math.max(0, args.length - declared));
+    // Next, declared params: all but the last go to __a_{K+1}; the last stays in HL.
+    for (let i = 0; i < declared - 1 && i < args.length; i++) {
+      compileExpression(out, args[i]!, warnings);
+      out.instruction("SHLD", paramAddr(name, i + 1));
+    }
+    if (declared > 0 && declared - 1 < args.length) {
+      compileExpression(out, args[declared - 1]!, warnings);
+    }
+    out.instruction("CALL", name);
+    return;
+  }
   for (let i = 0; i < args.length - 1; i++) {
     compileExpression(out, args[i]!, warnings);
     out.instruction("SHLD", paramAddr(name, i + 1));
@@ -866,6 +891,8 @@ function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings
   if (args.length > 0) compileExpression(out, args[args.length - 1]!, warnings);
   out.instruction("CALL", name);
 }
+
+function vaArgAddr(idx: number): string { return `__va_args+${idx * 2}`; }
 
 function variableAddress(out: Emitter, name: string, v: CVariable | null): string | null {
   if (v === null) {
@@ -967,6 +994,22 @@ class Emitter {
 
   private readonly callsSeen = new Set<string>();
   noteCallTo(name: string): void { this.callsSeen.add(name); }
+
+  private vaArgSlots = 0;
+  noteVaArgsUsed(count: number): void {
+    if (count > this.vaArgSlots) this.vaArgSlots = count;
+  }
+  getVaArgSlots(): number { return this.vaArgSlots; }
+
+  private readonly declaredFunctions = new Map<string, CFunction>();
+  recordFunction(f: CFunction): void {
+    // Prefer declarations with a body; otherwise keep the first seen.
+    const existing = this.declaredFunctions.get(f.name);
+    if (!existing || (f.body !== null && existing.body === null)) {
+      this.declaredFunctions.set(f.name, f);
+    }
+  }
+  findFunction(name: string): CFunction | undefined { return this.declaredFunctions.get(name); }
 
   emitRuntimeHelpers(userDefined: ReadonlySet<string>): void {
     for (const name of this.callsSeen) {
@@ -1203,7 +1246,13 @@ function emitInitializerData(out: Emitter, type: CType, init: InitializerValue):
   if (init.kind === "expr") {
     const e = init.expr;
     // String literal initializing a char array: emit DB "text", 0.
+    // Initializing a char* (or any pointer): emit a DW pointing to an interned copy.
     if (e.kind === "const" && typeof e.value === "string") {
+      if (type.kind === "pointer") {
+        const label = out.internString(e.value);
+        out.directiveRaw(`DW   ${label}`);
+        return;
+      }
       out.directiveRaw(`DB   ${encodeDbString(e.value)}, 0`);
       const declared = typeSize(type);
       const actual = e.value.length + 1;

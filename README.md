@@ -45,10 +45,12 @@ and merges its `puts` definition into the program. Demand-linking means
 | Comparisons | signed 16-bit `== != < <= > >=` |
 | Control flow | conditional jumps with fresh-labels; switch is a linear compare-and-branch dispatcher |
 | Structs | named fields with byte-offset layout; `.` and `->` member read/write for both byte and word fields |
-| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary |
+| I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary. Mini `printf` (%d, %s, %c, %%) auto-linked when called |
 | Preprocessor (full) | `#include` (both forms), `#define` (object- and function-like macros, variadic `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with C integer-expression evaluator + `defined(X)` + `__has_include(...)`, `#pragma once`, `#error`, CLI `-D` |
 | `__link("file.c")` | demand-linked: only files whose functions are reachable from the call graph are parsed. Parse failures of unreachable links are non-fatal |
-| Global initializers | scalars, strings (as DB), array list-initializers (as DW with padding) |
+| Variadic (`...`) | callsite stashes extras into a `__va_args[]` buffer; used by the mini printf. Declared-param args still follow c8080's `__a_N_<func>` convention |
+| Global initializers | scalars, strings (`char[]` → DB, `char*` → DW to interned copy), array list-initializers (as DW with padding) |
+| String escapes | `\n \r \t \0 \\ \' \" \a \b \f \v \xNN \nnn` (octal) in both char and string literals |
 | Runtime helpers | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — emitted only when referenced |
 
 ### End-to-end tests (all compile, assemble, and run on the sim)
@@ -69,6 +71,9 @@ goto forward, goto loop, compound assign to struct member,
 c.n++ struct member post-inc, pointer byte post-inc walk,
 iterative putint with local char[6], primes up to 30 trial-division,
 array of struct arr[i].x, RPN calculator "3 4 +"=7 etc.
+printf literal, printf %d (incl. 0, -42, INT16_MIN, INT16_MAX),
+printf mixed %s/%d/%c/%%, printf in a loop, printf unknown-spec passthrough,
+printf via char* format (not just literal), user printf overrides builtin.
 ```
 
 ### Known gaps
