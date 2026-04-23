@@ -13,7 +13,7 @@ that intercepts CP/M BDOS calls at `0x0005` for I/O.
 
 ```bash
 bun install
-bun test           # 131 unit + 37 end-to-end tests (compile + simulate)
+bun test           # 145 tests (51 end-to-end that compile + simulate)
 bun run typecheck  # tsc --noEmit
 bun bin/c8080.ts [-V] [-Ocpm|-Orks] [-I<dir>] [-D<name>] [-o<bin>] file.c
 ```
@@ -51,7 +51,7 @@ and merges its `puts` definition into the program. Demand-linking means
 | Global initializers | scalars, strings (as DB), array list-initializers (as DW with padding) |
 | Runtime helpers | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — emitted only when referenced |
 
-### End-to-end tests (all run on the simulator)
+### End-to-end tests (all compile, assemble, and run on the sim)
 
 ```
 return 42, add(3,4)=7, sum 1..10 via while=55, sum 1..5 via for=15,
@@ -62,9 +62,13 @@ strlen_("hello!")=6, byte array r/w, int array[5] r/w, string reversal
 enum constants RED+GREEN+BLUE=3, explicit enum values, enum as param,
 struct Point.x+.y, struct Box*->w*->h, struct with mixed field sizes,
 ++i + ++i, i++ post-inc, while (--i >= 0), *s++ string walk,
-switch dispatches correct case, switch default,
-iterative fib(10)=55, global scalar init, int[] init, char[] init,
-single char init, lookup table digits[7]
+switch dispatches correct case, switch default, iterative fib(10)=55,
+global scalar init, int[] init, char[] init, single char init,
+lookup table digits[7], ternary in expression, &&/|| short-circuit,
+goto forward, goto loop, compound assign to struct member,
+c.n++ struct member post-inc, pointer byte post-inc walk,
+iterative putint with local char[6], primes up to 30 trial-division,
+array of struct arr[i].x, RPN calculator "3 4 +"=7 etc.
 ```
 
 ### Known gaps
@@ -85,15 +89,8 @@ single char init, lookup table digits[7]
   `asm { }` blocks. sjasmplus and asm8080 disagree on syntax (e.g.
   `label = value` vs `label: EQU value`), so those don't assemble. Pure
   C stdlib sources (`puts.c`, etc.) work fine.
-- **Member access on arbitrary lvalues** — currently handles `var.x`,
-  `var->x`, and `(*ptr).x`; more complex expressions (e.g. `a[i].x`)
-  fall through as a warning.
 - **Struct value copy / pass-by-value** — assignment between struct
   values not supported; pass by pointer.
-- **Ternary in expression position** — parsed as an `if` AST node; the
-  codegen path for that as an expression is incomplete.
-- **Short-circuit `&&` / `||` codegen** — currently emits a simplified
-  (non-short-circuiting) implementation.
 
 ### Project layout
 
