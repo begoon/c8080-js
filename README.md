@@ -93,35 +93,9 @@ and merges its `puts` definition into the program. Demand-linking means
 | String escapes | `\n \r \t \0 \\ \' \" \a \b \f \v \xNN \nnn` (octal) in both char and string literals |
 | Runtime helpers | `__o_mul_u16`, `__o_div_u16`, `__o_shl_u16`, `__o_shr_u16`, `putchar`, `puts` — emitted only when referenced |
 
-### End-to-end tests (all compile, assemble, and run on the sim)
+### End-to-end tests
 
-```
-return 42, add(3,4)=7, sum 1..10 via while=55, sum 1..5 via for=15,
-abs(-17)=17, mul(7,13)=91, 12*12=144, 3+4*5=23, 100/7=14, 100%7=2,
-1<<10=1024, print "123" via /,%, putchar 'A', puts "hello", loop '***',
-strlen_("hello!")=6, byte array r/w, int array[5] r/w, string reversal
-"hello"→"olleh", char array init with string literal, int array list init,
-enum constants RED+GREEN+BLUE=3, explicit enum values, enum as param,
-struct Point.x+.y, struct Box*->w*->h, struct with mixed field sizes,
-++i + ++i, i++ post-inc, while (--i >= 0), *s++ string walk,
-switch dispatches correct case, switch default, iterative fib(10)=55,
-global scalar init, int[] init, char[] init, single char init,
-lookup table digits[7], ternary in expression, &&/|| short-circuit,
-goto forward, goto loop, compound assign to struct member,
-c.n++ struct member post-inc, pointer byte post-inc walk,
-iterative putint with local char[6], primes up to 30 trial-division,
-array of struct arr[i].x, RPN calculator "3 4 +"=7 etc.
-printf literal, printf %d (incl. 0, -42, INT16_MIN, INT16_MAX),
-printf mixed %s/%d/%c/%%, printf in a loop, printf unknown-spec passthrough,
-printf via char* format (not just literal), user printf overrides builtin,
-sprintf "x=42, y=hello" returning byte-count 13, sprintf reuses the buffer
-across calls, sprintf then printf (output routes back to stdout),
-struct-by-value assign (local=local, global=local, s=*p; 9-byte struct),
-nested struct o.i.a, struct list-init (plain + array-of-struct with
-char[4] name field; puts entries[0].name[0]=='a'),
-__stack fib(10)=55, __stack fact(7)=5040, __stack mutual isOdd(13)=1,
-__stack sumTo(5)=15 preserves locals across recursion.
-```
+Each case in [`test/codegen/endtoend.test.ts`](test/codegen/endtoend.test.ts) compiles a C snippet, assembles it with asm8080, and runs it on the in-process 8080 simulator — authoritative list of what works today.
 
 ### Known gaps
 
