@@ -17,7 +17,9 @@
       "Bash(bun -e ' *)",
       "Bash(bun *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(xxd aloha.rks)",
+      "Bash(xxd aloha.bin)"
     ]
   }
 }

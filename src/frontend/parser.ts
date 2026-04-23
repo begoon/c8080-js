@@ -531,14 +531,20 @@ export class Parser {
     let depth = 1;
     let lastLine = this.lex.line;
     let lastFile = this.lex.fileName;
+    let lastColEnd = -1;
     while (depth > 0) {
       if (this.lex.atEnd()) this.lex.throwHere("unterminated asm { ... }");
       if (this.lex.peekText("{")) depth++;
       else if (this.lex.peekText("}")) { depth--; if (depth === 0) break; }
-      const sep = (this.lex.line !== lastLine || this.lex.fileName !== lastFile) ? "\n" : " ";
-      parts.push(sep, this.lex.text);
-      lastLine = this.lex.line;
-      lastFile = this.lex.fileName;
+      const tok = this.lex.token;
+      let sep: string;
+      if (tok.line !== lastLine || tok.fileName !== lastFile) sep = "\n";
+      else if (tok.column === lastColEnd) sep = ""; // no whitespace → keep glued, so `0F818h` stays one word
+      else sep = " ";
+      parts.push(sep, tok.text);
+      lastLine = tok.line;
+      lastFile = tok.fileName;
+      lastColEnd = tok.column + tok.text.length;
       this.lex.advance();
     }
     this.lex.advance(); // closing '}'
