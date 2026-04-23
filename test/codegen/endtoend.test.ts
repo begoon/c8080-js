@@ -710,6 +710,51 @@ describe("codegen — end-to-end", () => {
     expect(r.output).toBe("n=7\n");
   });
 
+  test("__stack: recursive fib(10) = 55", () => {
+    expect(run(`
+      int __stack fib(int n) {
+        if (n < 2) return n;
+        return fib(n - 1) + fib(n - 2);
+      }
+      int main(void) { return fib(10); }
+    `)).toBe(55);
+  });
+
+  test("__stack: fact(7) = 5040", () => {
+    expect(run(`
+      int __stack fact(int n) {
+        if (n <= 1) return 1;
+        return n * fact(n - 1);
+      }
+      int main(void) { return fact(7); }
+    `)).toBe(5040);
+  });
+
+  test("__stack: mutual recursion isOdd(13) = 1", () => {
+    expect(run(`
+      int __stack isOdd(int n);
+      int __stack isEven(int n) { if (n == 0) return 1; return isOdd(n - 1); }
+      int __stack isOdd(int n)  { if (n == 0) return 0; return isEven(n - 1); }
+      int main(void) { return isOdd(13); }
+    `)).toBe(1);
+  });
+
+  test("__stack: locals survive a recursive call", () => {
+    expect(run(`
+      int __stack sumTo(int n) {
+        int total;
+        int i;
+        if (n == 0) return 0;
+        total = 0;
+        i = 1;
+        while (i <= n) { total = total + i; i = i + 1; }
+        sumTo(n - 1);   // must not clobber 'total' or 'i' in this frame
+        return total;
+      }
+      int main(void) { return sumTo(5); }
+    `)).toBe(15);
+  });
+
   test("sprintf: basic %d, %s into a buffer; return is byte count", () => {
     const r = runWithOutput(`
       int main(void) {

@@ -49,6 +49,7 @@ and merges its `puts` definition into the program. Demand-linking means
 | I/O | built-in `putchar` / `puts` via BDOS; user-defined versions win. String literals interned into the binary. Mini `printf` / `sprintf` (%d, %s, %c, %%) auto-linked when called; they share an output-routing layer so either can be called without the other |
 | Preprocessor (full) | `#include` (both forms), `#define` (object- and function-like macros, variadic `...`), `#undef`, `#if`/`#ifdef`/`#ifndef`/`#else`/`#endif` with C integer-expression evaluator + `defined(X)` + `__has_include(...)`, `#pragma once`, `#error`, CLI `-D` |
 | `__link("file.c")` | demand-linked: only files whose functions are reachable from the call graph are parsed. Parse failures of unreachable links are non-fatal |
+| `__stack` | recursion-enabled calling convention: the caller saves the callee's `__a_*` / `__l_*` slots on the CPU stack around the `CALL`, fills the new args, calls, then restores. Works for mutual recursion too. Word-sized params and locals only for now |
 | Variadic (`...`) | callsite stashes extras into a `__va_args[]` buffer; used by the mini printf. Declared-param args still follow c8080's `__a_N_<func>` convention |
 | Global initializers | scalars, strings (`char[]` → DB, `char*` → DW to interned copy), array list-initializers (as DW with padding) |
 | String escapes | `\n \r \t \0 \\ \' \" \a \b \f \v \xNN \nnn` (octal) in both char and string literals |
@@ -79,14 +80,13 @@ sprintf "x=42, y=hello" returning byte-count 13, sprintf reuses the buffer
 across calls, sprintf then printf (output routes back to stdout),
 struct-by-value assign (local=local, global=local, s=*p; 9-byte struct),
 nested struct o.i.a, struct list-init (plain + array-of-struct with
-char[4] name field; puts entries[0].name[0]=='a').
+char[4] name field; puts entries[0].name[0]=='a'),
+__stack fib(10)=55, __stack fact(7)=5040, __stack mutual isOdd(13)=1,
+__stack sumTo(5)=15 preserves locals across recursion.
 ```
 
 ### Known gaps
 
-- **`__stack` mode / recursion** — c8080's default `__global` convention
-  uses fixed param addresses, so recursive calls corrupt the frame
-  (documented in `manual.md` §5). Iterative patterns work fine.
 - **8-bit register path** — even `char` ops go through 16-bit HL where
   a tighter A-register path would save instructions.
 - **Signed arithmetic edge cases** — comparisons use sign of SBB result,

@@ -971,6 +971,42 @@ function compileCall(out: Emitter, n: Extract<CNode, { kind: "call" }>, warnings
     out.instruction("CALL", name);
     return;
   }
+  // __stack: the callee's static param/local slots must be saved before the
+  // call (recursion corrupts them otherwise) and restored after. All params
+  // are treated as 2-byte words; locals supported if they're all word-sized.
+  if (callee && callee.storage === "stack") {
+    const savedSlots: string[] = [];
+    for (let i = 0; i < callee.params.length; i++) savedSlots.push(paramAddr(name, i + 1));
+    for (let i = 0; i < callee.locals.length; i++) {
+      const l = callee.locals[i]!;
+      const sz = Math.max(typeSize(l.type), 1);
+      if (sz !== 2) {
+        warnings.push(`__stack function '${name}' has local '${l.name}' of size ${sz}; only word-sized locals are supported for recursion right now`);
+        return;
+      }
+      savedSlots.push(localAddr(name, i));
+    }
+    // Push every slot's current word onto the CPU stack (in savedSlots order).
+    for (const addr of savedSlots) {
+      out.instruction("LHLD", addr);
+      out.instruction("PUSH", "H");
+    }
+    // Fill new args: all but last via SHLD, last in HL.
+    for (let i = 0; i < args.length - 1; i++) {
+      compileExpression(out, args[i]!, warnings);
+      out.instruction("SHLD", paramAddr(name, i + 1));
+    }
+    if (args.length > 0) compileExpression(out, args[args.length - 1]!, warnings);
+    out.instruction("CALL", name);
+    // Return value is in HL. Move it aside so POP H can restore slots.
+    out.instruction("XCHG"); // DE = retval
+    for (let i = savedSlots.length - 1; i >= 0; i--) {
+      out.instruction("POP", "H");
+      out.instruction("SHLD", savedSlots[i]!);
+    }
+    out.instruction("XCHG"); // HL = retval
+    return;
+  }
   for (let i = 0; i < args.length - 1; i++) {
     compileExpression(out, args[i]!, warnings);
     out.instruction("SHLD", paramAddr(name, i + 1));
