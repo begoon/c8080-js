@@ -39,6 +39,7 @@ export type CNode =
   | { readonly kind: "binary"; readonly pos: SrcPos; readonly op: BinaryOp; readonly lhs: CNode; readonly rhs: CNode }
   | { readonly kind: "call"; readonly pos: SrcPos; readonly target: CNode; readonly args: readonly CNode[] }
   | { readonly kind: "member"; readonly pos: SrcPos; readonly object: CNode; readonly field: string; readonly arrow: boolean }
+  | { readonly kind: "ternary"; readonly pos: SrcPos; readonly cond: CNode; readonly then: CNode; readonly else: CNode }
   | { readonly kind: "if"; readonly pos: SrcPos; readonly cond: CNode; readonly then: CNode; readonly else: CNode | null }
   | { readonly kind: "while"; readonly pos: SrcPos; readonly cond: CNode; readonly body: CNode }
   | { readonly kind: "do"; readonly pos: SrcPos; readonly body: CNode; readonly cond: CNode }

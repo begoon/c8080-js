@@ -174,7 +174,11 @@ function compileNode(out: Emitter, n: CNode, warnings: string[]): void {
 }
 
 function isExpressionKind(k: CNode["kind"]): boolean {
-  return k === "const" || k === "var" || k === "binary" || k === "unary" || k === "call" || k === "load" || k === "assign";
+  return (
+    k === "const" || k === "var" || k === "binary" || k === "unary" ||
+    k === "call" || k === "load" || k === "assign" || k === "member" ||
+    k === "ternary"
+  );
 }
 
 function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
@@ -212,6 +216,10 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
       return;
     }
     case "binary":
+      if (n.op === "logand" || n.op === "logor") {
+        compileShortCircuit(out, n.op, n.lhs, n.rhs, warnings);
+        return;
+      }
       compileBinary(out, n.op, n.lhs, n.rhs, warnings);
       return;
     case "unary":
@@ -223,6 +231,19 @@ function compileExpression(out: Emitter, n: CNode, warnings: string[]): void {
     case "member":
       compileMemberRead(out, n, warnings);
       return;
+    case "ternary": {
+      const elseLabel = out.freshLabel("telse");
+      const endLabel = out.freshLabel("tend");
+      compileExpression(out, n.cond, warnings);
+      out.instruction("MOV", "A,H"); out.instruction("ORA", "L");
+      out.instruction("JZ", elseLabel);
+      compileExpression(out, n.then, warnings);
+      out.instruction("JMP", endLabel);
+      out.label(elseLabel);
+      compileExpression(out, n.else, warnings);
+      out.label(endLabel);
+      return;
+    }
     case "assign": {
       if (n.target.kind === "var") {
         compileExpression(out, n.value, warnings);
@@ -328,22 +349,43 @@ function compileBinary(
     case "and": case "or": case "xor":
       compileBitwise16(out, op);
       return;
-    case "logand": case "logor": {
-      // Treat as: 0 if both/either 0 else 1. For now, short-fold: compute ORs.
-      // HL = (HL != 0) && (DE != 0) ? 1 : 0   (for logand)
-      warnings.push(`logical ${op} uses simplified codegen`);
-      out.instruction("MOV", "A,H"); out.instruction("ORA", "L"); // A != 0 iff HL != 0
-      // HL = A != 0 ? 1 : 0 (for logand, multiply with DE truthiness)
-      // simplified: if HL == 0, result 0; else result is DE != 0 ? 1 : 0 for logand; DE for logor.
-      // Skipping a full short-circuit for now.
-      out.instruction("LXI", "H,0");
-      return;
-    }
+    // logand/logor are handled before compileBinary via compileShortCircuit.
     default:
       warnings.push(`unhandled binary op '${op}'`);
       out.instruction("LXI", "H,0");
       return;
   }
+}
+
+function compileShortCircuit(out: Emitter, op: "logand" | "logor", lhs: CNode, rhs: CNode, warnings: string[]): void {
+  const falseLabel = out.freshLabel(op === "logand" ? "land0" : "lor0");
+  const trueLabel = out.freshLabel(op === "logand" ? "land1" : "lor1");
+  const endLabel = out.freshLabel("lend");
+  // Evaluate LHS.
+  compileExpression(out, lhs, warnings);
+  out.instruction("MOV", "A,H"); out.instruction("ORA", "L");
+  if (op === "logand") {
+    out.instruction("JZ", falseLabel); // if LHS == 0, result = 0
+  } else {
+    out.instruction("JNZ", trueLabel); // if LHS != 0, result = 1
+  }
+  // Evaluate RHS.
+  compileExpression(out, rhs, warnings);
+  out.instruction("MOV", "A,H"); out.instruction("ORA", "L");
+  if (op === "logand") {
+    out.instruction("JZ", falseLabel); // if RHS == 0, result = 0
+    out.instruction("LXI", "H,1");
+    out.instruction("JMP", endLabel);
+    out.label(falseLabel);
+    out.instruction("LXI", "H,0");
+  } else {
+    out.instruction("JNZ", trueLabel); // if RHS != 0, result = 1
+    out.instruction("LXI", "H,0");
+    out.instruction("JMP", endLabel);
+    out.label(trueLabel);
+    out.instruction("LXI", "H,1");
+  }
+  out.label(endLabel);
 }
 
 function compileCompare(out: Emitter, op: string): void {

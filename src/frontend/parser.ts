@@ -660,7 +660,7 @@ export class Parser {
       const a = this.parseAssign();
       this.lex.needText(":");
       const b = this.parseAssign();
-      return { kind: "if", pos, cond, then: a, else: b };
+      return { kind: "ternary", pos, cond, then: a, else: b };
     }
     return cond;
   }

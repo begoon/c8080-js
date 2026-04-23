@@ -400,6 +400,43 @@ describe("codegen — end-to-end", () => {
     `)).toBe(999);
   });
 
+  test("ternary in expression", () => {
+    expect(run(`
+      int max_(int a, int b) { return a > b ? a : b; }
+      int main(void) { return max_(3, 7) + max_(42, 11); }
+    `)).toBe(7 + 42);
+  });
+
+  test("short-circuit && does not evaluate RHS when LHS is 0", () => {
+    expect(run(`
+      int gotcha = 0;
+      int bad(void) { gotcha = 99; return 1; }
+      int main(void) {
+        int r = 0 && bad();
+        return gotcha + r; // 0 if RHS was skipped
+      }
+    `)).toBe(0);
+  });
+
+  test("short-circuit || does not evaluate RHS when LHS is non-zero", () => {
+    expect(run(`
+      int gotcha = 0;
+      int bad(void) { gotcha = 99; return 1; }
+      int main(void) {
+        int r = 1 || bad();
+        return gotcha * 10 + r; // r=1, gotcha=0 ⇒ 1
+      }
+    `)).toBe(1);
+  });
+
+  test("&& returns 1 or 0", () => {
+    expect(run(`int main(void) { return (5 && 3) + (5 && 0) + (0 && 3); }`)).toBe(1);
+  });
+
+  test("|| returns 1 or 0", () => {
+    expect(run(`int main(void) { return (5 || 3) + (0 || 3) + (0 || 0); }`)).toBe(2);
+  });
+
   test("iterative fibonacci(10) = 55", () => {
     // Recursive fib requires __stack storage mode (c8080's default __global
     // mode uses fixed param addresses, so recursion corrupts the frame —

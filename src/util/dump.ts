@@ -143,6 +143,15 @@ export function dumpNode(n: CNode, indent: string): string[] {
       emit(`${n.arrow ? "->" : "."}${n.field}`);
       child(n.object);
       break;
+    case "ternary":
+      emit("ternary");
+      lines.push(`${indent}  cond:`);
+      lines.push(...dumpNode(n.cond, indent + "    "));
+      lines.push(`${indent}  then:`);
+      lines.push(...dumpNode(n.then, indent + "    "));
+      lines.push(`${indent}  else:`);
+      lines.push(...dumpNode(n.else, indent + "    "));
+      break;
     case "pushPop":
       emit("push_pop");
       if (n.regs.length > 0) { lines.push(`${indent}  regs:`); for (const r of n.regs) lines.push(...dumpNode(r, indent + "    ")); }

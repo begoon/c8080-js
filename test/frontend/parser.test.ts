@@ -161,7 +161,7 @@ describe("parser — expressions", () => {
     if (body.kind !== "block") throw new Error();
     const ret = body.stmts[0]!;
     if (ret.kind !== "return" || !ret.value) throw new Error();
-    expect(ret.value.kind).toBe("if");
+    expect(ret.value.kind).toBe("ternary");
   });
 
   test("post-increment", () => {
